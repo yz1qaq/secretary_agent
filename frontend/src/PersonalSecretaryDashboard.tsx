@@ -3,6 +3,7 @@ import {
   ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,20 +12,15 @@ import {
 type NavigationKey =
   | 'dashboard'
   | 'today'
-  | 'next7days'
-  | 'schedule'
   | 'tasks'
-  | 'settings'
 
 type MessageRole = 'assistant' | 'user'
 type PriorityLevel = '高' | '中' | '低'
-type DayLoad = 'High' | 'Medium' | 'Low'
 
-const CHAT_STORAGE_KEY = 'personal-secretary-dashboard-threads'
 const API_BASE_URL = (
   import.meta.env.VITE_SECRETARY_API_URL || 'http://127.0.0.1:9826'
 ).replace(/\/$/, '')
-const CHAT_BACKEND_MODE = import.meta.env.VITE_SECRETARY_CHAT_MODE || 'legacy'
+const CHAT_BACKEND_MODE = import.meta.env.VITE_SECRETARY_CHAT_MODE || 'modern'
 const USE_MODERN_CHAT_API = CHAT_BACKEND_MODE === 'modern'
 
 interface NavItemData {
@@ -42,12 +38,6 @@ interface TimelineEntry {
   time: string
   title: string
   type: '固定安排' | '建议任务'
-}
-
-interface WeekPlan {
-  day: string
-  focus: string
-  load: DayLoad
 }
 
 interface TaskData {
@@ -97,6 +87,7 @@ interface ThreadListItemResponse {
   title?: string
   preview?: string
   updated_at?: string
+  is_draft?: boolean
 }
 
 interface ChatThreadsResponse {
@@ -166,27 +157,6 @@ interface StreamChunk {
   error?: string
 }
 
-interface CourseScheduleRow {
-  academic_year?: string
-  year?: string
-  term?: string
-  semester?: string
-  weekday?: number | string
-  start_time?: string
-  end_time?: string
-  course_name?: string
-  course?: string
-  location?: string
-  teacher?: string
-  week_text?: string
-  week_range?: string
-  raw_source?: string
-}
-
-interface CourseScheduleResponse {
-  data?: CourseScheduleRow[]
-}
-
 interface SidebarProps {
   activeKey: NavigationKey
   items: NavItemData[]
@@ -195,29 +165,25 @@ interface SidebarProps {
 
 type StatCardProps = StatCardData
 type TimelineItemProps = TimelineEntry
-type WeekCardProps = WeekPlan
 type TaskItemProps = TaskData
 
 const navigationItems: NavItemData[] = [
-  { key: 'dashboard', label: '仪表盘' },
-  { key: 'today', label: '今日' },
-  { key: 'next7days', label: '未来 7 天' },
-  { key: 'schedule', label: '课表' },
-  { key: 'tasks', label: '任务' },
-  { key: 'settings', label: '设置' },
+  { key: 'dashboard', label: '今日计划' },
+  { key: 'today', label: '学习' },
+  { key: 'tasks', label: '生活' },
 ]
 
 const statCards: StatCardData[] = [
-  { label: '今日课程', value: '1', hint: '下午 09:00 有固定课程' },
-  { label: '可专注时间', value: '4.5 小时', hint: '适合安排深度工作' },
-  { label: '最高优先级', value: '实验总结', hint: '建议今晚前完成初稿' },
-  { label: '待处理任务', value: '6', hint: '其中 2 项为高优先级' },
+  { label: '今日课程', value: '1', hint: '09:00 有数据库课程' },
+  { label: '学习任务', value: '2', hint: '论文阅读与实验总结' },
+  { label: '可专注时间', value: '4.5 小时', hint: '适合安排深度学习' },
+  { label: '晚间复盘', value: '1 项', hint: '完成后整理今日笔记' },
 ]
 
 const timelineEntries: TimelineEntry[] = [
   {
     time: '09:00 - 10:30',
-    title: '课程：多模态学习',
+    title: '课程：数据库系统',
     type: '固定安排',
   },
   {
@@ -232,14 +198,18 @@ const timelineEntries: TimelineEntry[] = [
   },
 ]
 
-const weekPlans: WeekPlan[] = [
-  { day: '周一', focus: '课程 + 阅读', load: 'High' },
-  { day: '周二', focus: '实验推进', load: 'High' },
-  { day: '周三', focus: '作业整理', load: 'Medium' },
-  { day: '周四', focus: '写作输出', load: 'Medium' },
-  { day: '周五', focus: '会议准备', load: 'Medium' },
-  { day: '周六', focus: '深度工作', load: 'Low' },
-  { day: '周日', focus: '休息 + 周计划', load: 'Low' },
+const lifeTimelineEntries: TimelineEntry[] = [
+  {
+    time: '21:00 - 22:00',
+    title: '每日健身计划',
+    type: '固定安排',
+  },
+]
+
+const todayPlanCards: StatCardData[] = [
+  { label: '学习安排', value: '3 项', hint: '课程、论文阅读、实验总结' },
+  { label: '生活安排', value: '1 项', hint: '21:00 开始健身计划' },
+  { label: '今日重点', value: '先学后练', hint: '白天学习，晚间锻炼' },
 ]
 
 const tasks: TaskData[] = [
@@ -248,6 +218,10 @@ const tasks: TaskData[] = [
   { title: '回复导师邮件', deadline: '今天 17:30', priority: '高' },
   { title: '准备会议讨论要点', deadline: '周五 10:00', priority: '中' },
   { title: '更新阅读清单', deadline: '本周内', priority: '低' },
+]
+
+const lifeTasks: TaskData[] = [
+  { title: '21:00 健身训练', deadline: '今天 21:00 - 22:00', priority: '中' },
 ]
 
 const defaultAssistantMessages: ChatMessage[] = [
@@ -291,16 +265,6 @@ function getPriorityClasses(priority: PriorityLevel): string {
   return 'bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200'
 }
 
-function getDayLoadClasses(load: DayLoad): string {
-  if (load === 'High') {
-    return 'bg-red-50 text-red-600 ring-1 ring-inset ring-red-200'
-  }
-  if (load === 'Medium') {
-    return 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200'
-  }
-  return 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200'
-}
-
 function getTimelineTagClasses(type: TimelineEntry['type']): string {
   return type === '固定安排'
     ? 'bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200'
@@ -334,31 +298,6 @@ function createInitialThreadState(): {
   threads: ChatThread[]
   activeThreadId: string
 } {
-  if (typeof window !== 'undefined') {
-    try {
-      const raw = window.localStorage.getItem(CHAT_STORAGE_KEY)
-      if (raw) {
-        const parsed = JSON.parse(raw) as ChatThread[]
-        const validThreads = parsed.filter(
-          (thread) =>
-            typeof thread.threadId === 'string' &&
-            typeof thread.title === 'string' &&
-            typeof thread.preview === 'string' &&
-            typeof thread.isDraft === 'boolean' &&
-            Array.isArray(thread.messages),
-        )
-        if (validThreads.length > 0) {
-          return {
-            threads: validThreads,
-            activeThreadId: validThreads[0].threadId,
-          }
-        }
-      }
-    } catch {
-      // 忽略本地缓存损坏，回退到默认草稿线程
-    }
-  }
-
   const draftThread = createDraftThread()
   return {
     threads: [draftThread],
@@ -422,36 +361,32 @@ function normalizeThreadsResponse(payload: ChatThreadsResponse): ChatThread[] {
     threadId: thread.thread_id,
     title: thread.title || '未命名会话',
     preview: thread.preview || '继续和你的 AI 秘书对话',
-    isDraft: false,
+    isDraft: Boolean(thread.is_draft),
     messages: [],
   }))
 }
 
-function normalizeCourseScheduleResponse(
-  payload: CourseScheduleResponse | CourseScheduleRow[],
-): CourseScheduleRow[] {
-  return Array.isArray(payload) ? payload : payload.data || []
-}
+async function createServerThread(requestedThreadId?: string): Promise<ChatThread> {
+  const payload = await requestJson<ThreadListItemResponse>(buildApiUrl('/api/chat/threads'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      thread_id: requestedThreadId,
+      title: '草稿会话',
+      preview: '当前为草稿会话，发送首条消息后会自动保存。',
+      is_draft: true,
+    }),
+  })
 
-function formatWeekday(weekday?: number | string): string {
-  const mapping = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
-  const numeric =
-    typeof weekday === 'string' ? Number.parseInt(weekday, 10) : weekday
-  if (numeric && numeric >= 1 && numeric <= 7) {
-    return mapping[numeric - 1]
+  return {
+    threadId: payload.thread_id,
+    title: payload.title || '草稿会话',
+    preview: payload.preview || '当前为草稿会话，发送首条消息后会自动保存。',
+    isDraft: payload.is_draft ?? true,
+    messages: defaultAssistantMessages,
   }
-  return '--'
-}
-
-function formatTimeRange(row: CourseScheduleRow): string {
-  if (!row.start_time || !row.end_time) {
-    return '--'
-  }
-  return `${row.start_time.slice(0, 5)} - ${row.end_time.slice(0, 5)}`
-}
-
-function formatWeekText(row: CourseScheduleRow): string {
-  return row.week_text || row.week_range || '--'
 }
 
 async function readFileAsDataUrl(file: File): Promise<string> {
@@ -648,6 +583,7 @@ async function sendChatPayload(
       body: JSON.stringify({
         message: payload.message,
         thread_id: payload.thread_id,
+        attachments: payload.attachments,
       }),
     })
 
@@ -722,20 +658,6 @@ function TimelineItem({ time, title, type }: TimelineItemProps) {
   )
 }
 
-function WeekCard({ day, focus, load }: WeekCardProps) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="text-sm font-medium text-slate-500">{day}</p>
-      <p className="mt-3 text-sm font-semibold text-slate-900">{focus}</p>
-      <span
-        className={`mt-4 inline-flex rounded-full px-3 py-1 text-xs font-medium ${getDayLoadClasses(load)}`}
-      >
-        {load}
-      </span>
-    </div>
-  )
-}
-
 function TaskItem({ title, deadline, priority }: TaskItemProps) {
   return (
     <div className="flex items-center justify-between gap-4 border-b border-slate-100 py-4 last:border-b-0 last:pb-0 first:pt-0">
@@ -749,117 +671,6 @@ function TaskItem({ title, deadline, priority }: TaskItemProps) {
         {priority}
       </span>
     </div>
-  )
-}
-
-function CourseScheduleTable({
-  loading,
-  error,
-  rows,
-  onRefresh,
-}: {
-  loading: boolean
-  error: string
-  rows: CourseScheduleRow[]
-  onRefresh: () => void
-}) {
-  return (
-    <section className="space-y-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
-            数据库课表
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            从 MySQL 的 course_schedule 表读取课程安排并展示。
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onRefresh}
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
-        >
-          刷新课表
-        </button>
-      </div>
-
-      {loading ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
-          正在从数据库加载课表...
-        </div>
-      ) : null}
-
-      {!loading && error ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {error}
-        </div>
-      ) : null}
-
-      {!loading && !error && rows.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
-          当前 course_schedule 表还没有可展示的数据。你可以先让 AI
-          秘书记录课表，再回来查看。
-        </div>
-      ) : null}
-
-      {!loading && !error && rows.length > 0 ? (
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50">
-                <tr className="text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  <th className="px-5 py-4">学年</th>
-                  <th className="px-5 py-4">学期</th>
-                  <th className="px-5 py-4">星期</th>
-                  <th className="px-5 py-4">时间</th>
-                  <th className="px-5 py-4">课程</th>
-                  <th className="px-5 py-4">地点</th>
-                  <th className="px-5 py-4">教师</th>
-                  <th className="px-5 py-4">周次</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {rows.map((row, index) => (
-                  <tr key={`${row.course_name || row.course || 'course'}-${index}`} className="transition hover:bg-slate-50">
-                    <td className="px-5 py-4 text-slate-600">
-                      {row.academic_year || row.year || '--'}
-                    </td>
-                    <td className="px-5 py-4 text-slate-600">
-                      {row.term || row.semester || '--'}
-                    </td>
-                    <td className="px-5 py-4 text-slate-600">
-                      {formatWeekday(row.weekday)}
-                    </td>
-                    <td className="px-5 py-4 text-slate-600">
-                      {formatTimeRange(row)}
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="font-semibold text-slate-900">
-                        {row.course_name || row.course || '--'}
-                      </div>
-                      {row.raw_source ? (
-                        <div className="mt-1 truncate text-xs text-slate-400">
-                          {row.raw_source}
-                        </div>
-                      ) : null}
-                    </td>
-                    <td className="px-5 py-4 text-slate-600">
-                      {row.location || '--'}
-                    </td>
-                    <td className="px-5 py-4 text-slate-600">
-                      {row.teacher || '--'}
-                    </td>
-                    <td className="px-5 py-4 text-slate-600">
-                      {formatWeekText(row)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : null}
-    </section>
   )
 }
 
@@ -944,6 +755,30 @@ function EmptyStateCard({
   )
 }
 
+function getWorkspaceCopy(activeNav: NavigationKey): {
+  title: string
+  subtitle: string
+} {
+  if (activeNav === 'today') {
+    return {
+      title: '学习',
+      subtitle: '只展示今天和学习相关的课程、任务与专注安排。',
+    }
+  }
+
+  if (activeNav === 'tasks') {
+    return {
+      title: '生活',
+      subtitle: '当前先模拟每日固定的 21:00 健身计划，后续可继续扩展。',
+    }
+  }
+
+  return {
+    title: '今日计划',
+    subtitle: '汇总学习与生活中今天应该执行的安排，帮助你快速进入状态。',
+  }
+}
+
 export default function PersonalSecretaryDashboard() {
   const initialThreadState = useMemo(() => createInitialThreadState(), [])
   const [activeNav, setActiveNav] = useState<NavigationKey>('dashboard')
@@ -957,10 +792,6 @@ export default function PersonalSecretaryDashboard() {
   const [chatLoading, setChatLoading] = useState(true)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [sending, setSending] = useState(false)
-  const [courseRows, setCourseRows] = useState<CourseScheduleRow[]>([])
-  const [courseLoading, setCourseLoading] = useState(false)
-  const [courseLoaded, setCourseLoaded] = useState(false)
-  const [courseError, setCourseError] = useState('')
   const messageBottomRef = useRef<HTMLDivElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const pendingAttachmentsRef = useRef<PendingAttachment[]>(pendingAttachments)
@@ -971,12 +802,14 @@ export default function PersonalSecretaryDashboard() {
       threads.find((thread) => thread.threadId === activeThreadId) || threads[0],
     [activeThreadId, threads],
   )
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(threads))
-    }
-  }, [threads])
+  const lastMessage = activeThread?.messages[activeThread.messages.length - 1]
+  const lastMessageSignature = useMemo(
+    () =>
+      lastMessage
+        ? `${lastMessage.id}:${lastMessage.content.length}:${lastMessage.isStreaming ? '1' : '0'}`
+        : 'empty',
+    [lastMessage],
+  )
 
   useEffect(() => {
     pendingAttachmentsRef.current = pendingAttachments
@@ -1047,7 +880,10 @@ export default function PersonalSecretaryDashboard() {
 
         const normalizedThreads = normalizeThreadsResponse(payload)
         if (normalizedThreads.length === 0) {
-          const draftThread = createDraftThread()
+          const draftThread = await createServerThread()
+          if (!alive) {
+            return
+          }
           setThreads([draftThread])
           setActiveThreadId(draftThread.threadId)
           return
@@ -1060,6 +896,9 @@ export default function PersonalSecretaryDashboard() {
         if (!alive) {
           return
         }
+        const draftThread = createDraftThread()
+        setThreads([draftThread])
+        setActiveThreadId(draftThread.threadId)
         if (!isNotFoundError(error)) {
           setChatError(
             error instanceof Error
@@ -1081,15 +920,18 @@ export default function PersonalSecretaryDashboard() {
     }
   }, [loadThreadHistory])
 
-  useEffect(() => {
-    if (activeNav === 'schedule' && !courseLoaded && !courseLoading) {
-      void fetchCourseSchedule()
-    }
-  }, [activeNav, courseLoaded, courseLoading])
+  useLayoutEffect(() => {
+    const animationFrame = window.requestAnimationFrame(() => {
+      messageBottomRef.current?.scrollIntoView({
+        behavior: lastMessage?.isStreaming ? 'auto' : 'smooth',
+        block: 'end',
+      })
+    })
 
-  useEffect(() => {
-    messageBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [activeThread?.messages.length, sending, activeThreadId])
+    return () => {
+      window.cancelAnimationFrame(animationFrame)
+    }
+  }, [activeThreadId, lastMessageSignature, sending, lastMessage?.isStreaming])
 
   useEffect(() => {
     return () => {
@@ -1143,35 +985,20 @@ export default function PersonalSecretaryDashboard() {
     }
   }
 
-  async function fetchCourseSchedule() {
-    setCourseLoading(true)
-    setCourseError('')
-    try {
-      const payload = await requestJson<CourseScheduleResponse | CourseScheduleRow[]>(
-        buildApiUrl('/api/course-schedule'),
-      )
-      setCourseRows(normalizeCourseScheduleResponse(payload))
-      setCourseLoaded(true)
-    } catch (error) {
-      setCourseError(
-        error instanceof Error
-          ? error.message
-          : '读取课表失败，请检查 /api/course-schedule。',
-      )
-      setCourseLoaded(true)
-    } finally {
-      setCourseLoading(false)
-    }
-  }
-
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files || [])
     if (files.length === 0) {
       return
     }
 
+    if (files.some((file) => !isImageType(file.type))) {
+      setChatError('当前仅支持上传图片，请选择 JPG、PNG、WEBP 等图片文件。')
+      event.target.value = ''
+      return
+    }
+
     if (pendingAttachments.length + files.length > 3) {
-      setChatError('附件最多 3 个，请先移除后再继续添加。')
+      setChatError('图片最多上传 3 张，请先移除后再继续添加。')
       event.target.value = ''
       return
     }
@@ -1204,13 +1031,21 @@ export default function PersonalSecretaryDashboard() {
     setPendingAttachments([])
   }
 
-  function handleNewThread() {
-    const draftThread = createDraftThread()
-    setThreads((current) => [draftThread, ...current])
-    setActiveThreadId(draftThread.threadId)
-    setDraftMessage('')
-    setPendingAttachments([])
-    setChatError('')
+  async function handleNewThread() {
+    try {
+      const draftThread = USE_MODERN_CHAT_API
+        ? await createServerThread(crypto.randomUUID())
+        : createDraftThread()
+      setThreads((current) => [draftThread, ...current])
+      setActiveThreadId(draftThread.threadId)
+      setDraftMessage('')
+      setPendingAttachments([])
+      setChatError('')
+    } catch (error) {
+      setChatError(
+        error instanceof Error ? error.message : '创建新会话失败，请稍后重试。',
+      )
+    }
   }
 
   async function handleThreadChange(threadId: string) {
@@ -1230,12 +1065,18 @@ export default function PersonalSecretaryDashboard() {
   }
 
   async function handleSendMessage() {
-    if (!activeThread || sending || !draftMessage.trim()) {
+    if (!activeThread || sending) {
       return
     }
 
     const outgoingText = draftMessage.trim()
     const outgoingAttachments = [...pendingAttachments]
+    if (!outgoingText && outgoingAttachments.length === 0) {
+      return
+    }
+
+    const previewText =
+      outgoingText || `发送了 ${outgoingAttachments.length} 张图片`
     const assistantMessageId = crypto.randomUUID()
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
@@ -1259,10 +1100,10 @@ export default function PersonalSecretaryDashboard() {
           ? {
               ...thread,
               messages: [...thread.messages, userMessage, assistantPlaceholder],
-              preview: outgoingText,
+              preview: previewText,
               title:
                 thread.isDraft && thread.title === '草稿会话'
-                  ? outgoingText.slice(0, 14) || '新会话'
+                  ? previewText.slice(0, 14) || '新会话'
                   : thread.title,
             }
           : thread,
@@ -1319,11 +1160,11 @@ export default function PersonalSecretaryDashboard() {
                 ...thread,
                 title:
                   response.title ||
-                  (thread.title === '草稿会话' ? outgoingText.slice(0, 14) : thread.title),
+                  (thread.title === '草稿会话' ? previewText.slice(0, 14) : thread.title),
                 preview:
                   response.preview ||
                   response.reply?.slice(0, 28) ||
-                  outgoingText.slice(0, 28),
+                  previewText.slice(0, 28),
                 isDraft: false,
                 messages: thread.messages.map((message) =>
                   message.id === assistantMessageId
@@ -1363,7 +1204,7 @@ export default function PersonalSecretaryDashboard() {
   }
 
   function renderMainContent(): ReactNode {
-    const dashboardSections = (
+    const learningSections = (
       <div className="space-y-8">
         <section>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -1373,94 +1214,10 @@ export default function PersonalSecretaryDashboard() {
           </div>
         </section>
 
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">今日时间线</h2>
-            <span className="text-sm text-slate-500">固定安排 + 建议任务</span>
-          </div>
-          <div className="space-y-3">
-            {timelineEntries.map((item) => (
-              <TimelineItem key={`${item.time}-${item.title}`} {...item} />
-            ))}
-          </div>
-        </section>
-      </div>
-    )
-
-    if (activeNav === 'dashboard') {
-      return (
-        <div className="space-y-8">
-          {dashboardSections}
-          <section className="space-y-4">
-            <h2 className="text-lg font-semibold text-slate-900">未来 7 天计划</h2>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-7">
-              {weekPlans.map((plan) => (
-                <WeekCard key={plan.day} {...plan} />
-              ))}
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-slate-900">任务池</h2>
-              <button
-                type="button"
-                className="text-sm font-medium text-slate-500 transition hover:text-slate-900"
-              >
-                查看全部
-              </button>
-            </div>
-            <div className="mt-4">
-              {tasks.map((task) => (
-                <TaskItem key={task.title} {...task} />
-              ))}
-            </div>
-          </section>
-        </div>
-      )
-    }
-
-    if (activeNav === 'today') {
-      return dashboardSections
-    }
-
-    if (activeNav === 'next7days') {
-      return (
-        <section className="space-y-4">
-          <h2 className="text-lg font-semibold text-slate-900">未来 7 天计划</h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-7">
-            {weekPlans.map((plan) => (
-              <WeekCard key={plan.day} {...plan} />
-            ))}
-          </div>
-        </section>
-      )
-    }
-
-    if (activeNav === 'schedule') {
-      return (
-        <CourseScheduleTable
-          loading={courseLoading}
-          error={courseError}
-          rows={courseRows}
-          onRefresh={() => {
-            void fetchCourseSchedule()
-          }}
-        />
-      )
-    }
-
-    if (activeNav === 'tasks') {
-      return (
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">任务池</h2>
-            <button
-              type="button"
-              className="text-sm font-medium text-slate-500 transition hover:text-slate-900"
-            >
-              查看全部
-            </button>
+            <h2 className="text-lg font-semibold text-slate-900">学习任务</h2>
+            <span className="text-sm text-slate-500">按优先级推进</span>
           </div>
           <div className="mt-4">
             {tasks.map((task) => (
@@ -1468,20 +1225,108 @@ export default function PersonalSecretaryDashboard() {
             ))}
           </div>
         </section>
+      </div>
+    )
+
+    const lifeSections = (
+      <div className="space-y-8">
+        <section>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <StatCard
+              label="今晚安排"
+              value="21:00"
+              hint="固定执行一小时健身计划"
+            />
+            <StatCard
+              label="生活习惯"
+              value="1 项"
+              hint="先从稳定的晚间锻炼开始"
+            />
+            <StatCard
+              label="今日目标"
+              value="动起来"
+              hint="完成运动后简单拉伸和补水"
+            />
+          </div>
+        </section>
+
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-900">生活安排</h2>
+            <span className="text-sm text-slate-500">固定习惯</span>
+          </div>
+          <div className="space-y-3">
+            {lifeTimelineEntries.map((item) => (
+              <TimelineItem key={`${item.time}-${item.title}`} {...item} />
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-900">生活提醒</h2>
+            <span className="text-sm text-slate-500">模拟内容</span>
+          </div>
+          <div className="mt-4">
+            {lifeTasks.map((task) => (
+              <TaskItem key={task.title} {...task} />
+            ))}
+          </div>
+        </section>
+      </div>
+    )
+
+    if (activeNav === 'dashboard') {
+      const todayTimeline = [...timelineEntries, ...lifeTimelineEntries].sort((a, b) =>
+        a.time.localeCompare(b.time),
+      )
+
+      return (
+        <div className="space-y-8">
+          <section>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              {todayPlanCards.map((stat) => (
+                <StatCard key={stat.label} {...stat} />
+              ))}
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-900">今日执行清单</h2>
+              <span className="text-sm text-slate-500">学习 + 生活</span>
+            </div>
+            <div className="space-y-3">
+              {todayTimeline.map((item) => (
+                <TimelineItem key={`${item.time}-${item.title}`} {...item} />
+              ))}
+            </div>
+          </section>
+
+          <EmptyStateCard
+            title="今日建议"
+            description="优先完成上午课程和下午的学习任务，21:00 之后切换到健身计划，让学习和生活安排各自保持节奏。"
+          />
+        </div>
       )
     }
 
-    return (
-      <EmptyStateCard
-        title="设置"
-        description="这里可以继续扩展模型偏好、工作时段、提醒策略和附件默认处理方式。当前先保留为设置占位卡片。"
-      />
-    )
+    if (activeNav === 'today') {
+      return learningSections
+    }
+
+    if (activeNav === 'tasks') {
+      return lifeSections
+    }
+
+    return null
   }
 
   if (!activeThread) {
     return null
   }
+
+  const workspaceCopy = getWorkspaceCopy(activeNav)
 
   return (
     <div className="h-screen bg-slate-50 text-slate-900">
@@ -1497,10 +1342,10 @@ export default function PersonalSecretaryDashboard() {
             <div className="mb-8 flex items-start justify-between gap-6">
               <div>
                 <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
-                  个人秘书
+                  {workspaceCopy.title}
                 </h1>
                 <p className="mt-2 text-base text-slate-500">
-                  未来 7 天日程助手
+                  {workspaceCopy.subtitle}
                 </p>
               </div>
               <button
@@ -1541,7 +1386,9 @@ export default function PersonalSecretaryDashboard() {
 
                 <button
                   type="button"
-                  onClick={handleNewThread}
+                  onClick={() => {
+                    void handleNewThread()
+                  }}
                   disabled={sending}
                   className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
@@ -1585,7 +1432,7 @@ export default function PersonalSecretaryDashboard() {
                 <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
                   <div className="flex items-center justify-between gap-4">
                     <p className="text-sm font-medium text-slate-900">
-                      待发送附件（最多 3 个）
+                      待发送图片（最多 3 张）
                     </p>
                     <button
                       type="button"
@@ -1654,6 +1501,7 @@ export default function PersonalSecretaryDashboard() {
                       ref={fileInputRef}
                       type="file"
                       multiple
+                      accept="image/*"
                       className="hidden"
                       onChange={handleFileChange}
                     />
@@ -1670,7 +1518,7 @@ export default function PersonalSecretaryDashboard() {
                       onClick={() => {
                         void handleSendMessage()
                       }}
-                      disabled={sending || !draftMessage.trim()}
+                      disabled={sending || (!draftMessage.trim() && pendingAttachments.length === 0)}
                       className="rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                     >
                       {sending ? '发送中...' : '发送'}

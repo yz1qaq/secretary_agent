@@ -1,0 +1,56 @@
+{
+  "threads": [
+    {
+      "thread_id": "frontend-thread-check",
+      "title": "请用一句话介绍你自己",
+      "preview": "根据查询结果，MySQL数据库信息如下：\n\n## MyS",
+      "is_draft": false,
+      "created_at": "2026-03-27T00:28:05",
+      "updated_at": "2026-03-27T00:34:38",
+      "messages": [
+        {
+          "id": "8fee55e1-26f9-46d0-9403-34f8a5236164",
+          "role": "user",
+          "content": "请用一句话介绍你自己",
+          "created_at": "00:28",
+          "attachments": []
+        },
+        {
+          "id": "7f9802f2-1c12-4326-9216-f9e6a237d081",
+          "role": "assistant",
+          "content": "我是moss，一位热心助人的秘书，随时准备为您提供各种帮助。",
+          "created_at": "00:28",
+          "attachments": []
+        },
+        {
+          "id": "1b7ff945-9014-45da-ac45-eb21decf866c",
+          "role": "user",
+          "content": "帮我查看当前数据库信息",
+          "created_at": "00:30",
+          "attachments": []
+        },
+        {
+          "id": "ca473fc5-3ce0-4909-b36d-e6bd4197c87a",
+          "role": "assistant",
+          "content": "根据终端输出，我已经获取到当前系统的数据库信息。让我为您总结一下：\n\n## 当前数据库信息\n\n**正在运行的数据库服务：**\n\n1. **MongoDB** - 端口 27017\n   - 状态：运行中 (通过 Docker 运行)\n   - 有 4 个活跃的 Python 连接\n\n2. **MySQL** - 端口 3306\n   - 状态：运行中 (通过 Docker 运行，显示为 `*:mysql`)\n\n3. **Redis** - 端口 6379\n   - 状态：运行中 (进程名 `redis-server`)\n   - PID: 45372\n\n**未安装/未运行的数据库：**\n- MySQL 命令行客户端未安装 (`mysql not found`)\n- 没有通过 Homebrew 安装的 MySQL\n\n**已安装的数据库工具：**\n- SQLite3 版本 3.51.0 (2025-06-12)\n\n总结：您的系统当前通过 Docker 运行着 MongoDB 和 MySQL 服务，同时有独立的 Redis 服务在运行。SQLite3 已安装可用于本地数据库操作。",
+          "created_at": "00:30",
+          "attachments": []
+        },
+        {
+          "id": "b630037d-8a53-44a9-b4b3-64e4577b9f86",
+          "role": "user",
+          "content": "读取mysql数据库信息，有哪些表",
+          "created_at": "00:34",
+          "attachments": []
+        },
+        {
+          "id": "7336b588-3e0c-4364-b31b-0dbf67d06b9a",
+          "role": "assistant",
+          "content": "根据查询结果，MySQL数据库信息如下：\n\n## MySQL 数据库信息\n\n**容器信息：**\n- 容器名称：`friendly_gauss`\n- 镜像版本：MySQL 8.0.45\n- 运行状态：已运行 2 天\n\n**数据库列表：**\n| 数据库名 |\n|----------|\n| information_schema |\n| performance_schema |\n| test |\n\n**test 数据库中的表：**\n| 表名 |\n|------|\n| course_schedule |\n\n**连接信息：**\n- 主机：localhost\n- 端口：3306\n- 用户名：yz1\n- 密码：123456\n\n目前 `test` 数据库中只有一张名为 `course_schedule`（课程表）的表。如果您需要查看该表的结构或数据，请告诉我！",
+          "created_at": "00:34",
+          "attachments": []
+        }
+      ]
+    }
+  ]
+}

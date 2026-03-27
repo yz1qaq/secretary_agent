@@ -6,6 +6,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator
 
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
@@ -17,17 +21,13 @@ from langgraph.checkpoint.mongodb import MongoDBSaver
 from pydantic import BaseModel, Field
 
 from se_tools.terminal_tools import get_stdio_terminal_tools
-
-
-
-ROOT_DIR = Path(__file__).resolve().parent.parent
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+from se_tools.rag_tools import get_stdio_rag_tools
 
 from se_model.llm import creat_llm
 from se_model.llm_config import creat_config
 from se_prompts.system_prompts import creat_system_prompt
 from se_tools.cli_tools import get_stdio_cli_tools
+from utils.thread_store import DEFAULT_THREAD_PREVIEW, DEFAULT_THREAD_TITLE, thread_store
 
 
 API_KEY = os.getenv("DASHSCOPE_API_KEY")
@@ -41,8 +41,19 @@ PORT = 9826
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(..., description="用户发送给 AI 秘书的消息")
+    message: str = Field(default="", description="用户发送给 AI 秘书的消息")
     thread_id: str = Field(default=DEFAULT_THREAD_ID, description="会话线程 ID")
+    attachments: list["ChatAttachmentPayload"] = Field(
+        default_factory=list,
+        description="用户上传的图片附件",
+    )
+
+
+class ChatAttachmentPayload(BaseModel):
+    name: str = Field(..., description="附件文件名")
+    type: str = Field(..., description="附件 MIME 类型")
+    size: int = Field(default=0, description="附件大小")
+    content: str = Field(..., description="附件内容，通常为 data URL")
 
 
 class ChatResponse(BaseModel):
@@ -50,6 +61,19 @@ class ChatResponse(BaseModel):
     reply: str
     thread_id: str
     checkpointer: str
+
+
+class ThreadCreateRequest(BaseModel):
+    thread_id: str | None = None
+    title: str = Field(default=DEFAULT_THREAD_TITLE)
+    preview: str = Field(default=DEFAULT_THREAD_PREVIEW)
+    is_draft: bool = Field(default=True)
+
+
+class ThreadUpdateRequest(BaseModel):
+    title: str | None = None
+    preview: str | None = None
+    is_draft: bool | None = None
 
 
 def creat_se_agent(llm, tools, checkpointer, debug: bool, system_prompt: str):
@@ -92,6 +116,39 @@ def split_text_for_stream(reply: str, chunk_size: int = 2) -> list[str]:
     return [text[index : index + chunk_size] for index in range(0, len(text), chunk_size)]
 
 
+def build_user_content(message: str, attachments: list[ChatAttachmentPayload]) -> str | list[dict[str, Any]]:
+    if len(attachments) > 3:
+        raise ValueError("最多只能同时上传 3 张图片")
+
+    content_blocks: list[dict[str, Any]] = []
+    text = message.strip()
+    if text:
+        content_blocks.append({"type": "text", "text": text})
+
+    for attachment in attachments:
+        if not attachment.type.startswith("image/"):
+            raise ValueError(f"暂不支持的附件类型: {attachment.type}")
+        if not attachment.content.startswith("data:"):
+            raise ValueError(f"图片附件 {attachment.name} 缺少有效的 data URL 内容")
+
+        content_blocks.append(
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": attachment.content,
+                },
+            }
+        )
+
+    if not content_blocks:
+        raise ValueError("message 和 attachments 不能同时为空")
+
+    if len(content_blocks) == 1 and content_blocks[0]["type"] == "text":
+        return text
+
+    return content_blocks
+
+
 class SecretaryAgentService:
     def __init__(self) -> None:
         self.agent = None
@@ -107,6 +164,10 @@ class SecretaryAgentService:
 
             cli_tools = await get_stdio_cli_tools()
             terminal_tools = await get_stdio_terminal_tools()
+            try:
+                rag_tools = await get_stdio_rag_tools()
+            except FileNotFoundError:
+                rag_tools = []
             system_prompt = creat_system_prompt(agent_name="moss")
             config = creat_config(
                 api_key=API_KEY,
@@ -130,7 +191,7 @@ class SecretaryAgentService:
 
             self.agent = creat_se_agent(
                 llm=llm,
-                tools=cli_tools+terminal_tools,
+                tools=cli_tools+terminal_tools+rag_tools,
                 checkpointer=self.checkpointer,
                 debug=False,
                 system_prompt=system_prompt,
@@ -145,9 +206,14 @@ class SecretaryAgentService:
         self.checkpointer = None
         self.checkpointer_name = "unknown"
 
-    async def ask(self, message: str, thread_id: str) -> str:
-        if not message.strip():
-            raise ValueError("message 不能为空")
+    async def ask(
+        self,
+        message: str,
+        thread_id: str,
+        attachments: list[ChatAttachmentPayload] | None = None,
+    ) -> str:
+        attachments = attachments or []
+        user_content = build_user_content(message, attachments)
 
         await self.startup()
 
@@ -155,7 +221,7 @@ class SecretaryAgentService:
             raise RuntimeError("agent 初始化失败")
 
         result = await self.agent.ainvoke(
-            input={"messages": [{"role": "user", "content": message}]},
+            input={"messages": [{"role": "user", "content": user_content}]},
             config=RunnableConfig(configurable={"thread_id": thread_id}),
         )
 
@@ -163,11 +229,23 @@ class SecretaryAgentService:
         if not reply:
             raise RuntimeError("agent 未返回有效回复")
 
+        await thread_store.append_turn(
+            thread_id=thread_id,
+            user_content=message.strip(),
+            assistant_content=reply,
+            user_attachments=[attachment.model_dump() for attachment in attachments],
+        )
+
         return reply
 
-    async def ask_stream(self, message: str, thread_id: str) -> AsyncIterator[dict[str, str]]:
-        if not message.strip():
-            raise ValueError("message 不能为空")
+    async def ask_stream(
+        self,
+        message: str,
+        thread_id: str,
+        attachments: list[ChatAttachmentPayload] | None = None,
+    ) -> AsyncIterator[dict[str, str]]:
+        attachments = attachments or []
+        user_content = build_user_content(message, attachments)
 
         await self.startup()
 
@@ -176,7 +254,7 @@ class SecretaryAgentService:
 
         final_state = None
         async for state in self.agent.astream(
-            input={"messages": [{"role": "user", "content": message}]},
+            input={"messages": [{"role": "user", "content": user_content}]},
             config=RunnableConfig(configurable={"thread_id": thread_id}),
             stream_mode="values",
         ):
@@ -189,6 +267,13 @@ class SecretaryAgentService:
         if not reply:
             raise RuntimeError("agent 未返回有效回复")
 
+        stored_thread = await thread_store.append_turn(
+            thread_id=thread_id,
+            user_content=message.strip(),
+            assistant_content=reply,
+            user_attachments=[attachment.model_dump() for attachment in attachments],
+        )
+
         for delta in split_text_for_stream(reply):
             yield {
                 "delta": delta,
@@ -199,6 +284,8 @@ class SecretaryAgentService:
         yield {
             "reply": reply,
             "thread_id": str(thread_id),
+            "title": str(stored_thread.get("title") or DEFAULT_THREAD_TITLE),
+            "preview": str(stored_thread.get("preview") or DEFAULT_THREAD_PREVIEW),
             "done": "true",
         }
 
@@ -232,12 +319,83 @@ async def health_check():
     }
 
 
+@app.get("/api/chat/threads")
+async def get_chat_threads():
+    return {
+        "threads": await thread_store.list_threads(),
+    }
+
+
+@app.post("/api/chat/threads")
+async def create_chat_thread(payload: ThreadCreateRequest):
+    thread = await thread_store.create_thread(
+        requested_thread_id=payload.thread_id,
+        title=payload.title,
+        preview=payload.preview,
+        is_draft=payload.is_draft,
+    )
+    return {
+        "thread_id": thread["thread_id"],
+        "title": thread["title"],
+        "preview": thread["preview"],
+        "updated_at": thread["updated_at"],
+        "is_draft": thread["is_draft"],
+    }
+
+
+@app.get("/api/chat/history")
+async def get_chat_history(thread_id: str):
+    thread = await thread_store.get_thread(thread_id)
+    if thread is None:
+        raise HTTPException(status_code=404, detail="thread not found")
+
+    return {
+        "thread_id": thread["thread_id"],
+        "title": thread["title"],
+        "preview": thread["preview"],
+        "messages": thread.get("messages", []),
+    }
+
+
+@app.patch("/api/chat/threads/{thread_id}")
+async def update_chat_thread(thread_id: str, payload: ThreadUpdateRequest):
+    thread = await thread_store.update_thread(
+        thread_id,
+        title=payload.title,
+        preview=payload.preview,
+        is_draft=payload.is_draft,
+    )
+    if thread is None:
+        raise HTTPException(status_code=404, detail="thread not found")
+
+    return {
+        "thread_id": thread["thread_id"],
+        "title": thread["title"],
+        "preview": thread["preview"],
+        "updated_at": thread["updated_at"],
+        "is_draft": thread["is_draft"],
+    }
+
+
+@app.delete("/api/chat/threads/{thread_id}")
+async def delete_chat_thread(thread_id: str):
+    deleted = await thread_store.delete_thread(thread_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="thread not found")
+
+    return {
+        "status": "success",
+        "thread_id": thread_id,
+    }
+
+
 @app.post("/", response_model=ChatResponse)
 async def chat(payload: ChatRequest):
     try:
         reply = await agent_service.ask(
             message=payload.message,
             thread_id=str(payload.thread_id),
+            attachments=payload.attachments,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -252,6 +410,35 @@ async def chat(payload: ChatRequest):
     )
 
 
+@app.post("/api/chat")
+async def chat_v2(payload: ChatRequest):
+    try:
+        reply = await agent_service.ask(
+            message=payload.message,
+            thread_id=str(payload.thread_id),
+            attachments=payload.attachments,
+        )
+        thread = await thread_store.get_thread(str(payload.thread_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return {
+        "thread_id": str(payload.thread_id),
+        "title": thread["title"] if thread else DEFAULT_THREAD_TITLE,
+        "preview": thread["preview"] if thread else DEFAULT_THREAD_PREVIEW,
+        "reply": reply,
+        "message": {
+            "id": "",
+            "role": "assistant",
+            "content": reply,
+            "created_at": "",
+            "attachments": [],
+        },
+    }
+
+
 @app.post("/stream")
 async def chat_stream(payload: ChatRequest):
     async def event_generator():
@@ -259,6 +446,7 @@ async def chat_stream(payload: ChatRequest):
             async for chunk in agent_service.ask_stream(
                 message=payload.message,
                 thread_id=str(payload.thread_id),
+                attachments=payload.attachments,
             ):
                 yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
         except ValueError as exc:
@@ -279,6 +467,11 @@ async def chat_stream(payload: ChatRequest):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@app.post("/api/chat/stream")
+async def chat_stream_v2(payload: ChatRequest):
+    return await chat_stream(payload)
 
 
 if __name__ == "__main__":
