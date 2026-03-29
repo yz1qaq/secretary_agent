@@ -1,5 +1,8 @@
 import os
 # 示例代码仅供参考，请勿在生产环境中直接使用
+import sys
+import traceback
+from pathlib import Path
 
 from alibabacloud_bailian20231229 import models as bailian_20231229_models
 from alibabacloud_bailian20231229.client import Client as bailian20231229Client
@@ -10,6 +13,12 @@ from mcp.server.fastmcp import FastMCP
 from typing import Annotated
 from pydantic import Field
 
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from utils.logger import get_project_logger
+
 acess_key = os.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID")
 acess_key_secret = os.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET")
 workspace_id = os.getenv("WORKSPACE_ID")
@@ -17,6 +26,7 @@ rag_id = "0v4nc7kund"
 
 
 mcp = FastMCP()
+logger = get_project_logger("rag_mcp", "rag_mcp.log")
 
 
 def check_environment_variables():
@@ -87,23 +97,32 @@ def retrieve_rag(
         str or None: 如果成功，返回检索召回的文本切片；否则返回 None。
     """
     if not check_environment_variables():
-        print("环境变量校验未通过。")
-        return None
+        logger.error("retrieve_rag failed: missing required environment variables")
+        return ""
     try:
         # print("步骤1：创建Client")
         client = create_client(acess_key, acess_key_secret)
         # print("步骤2：检索知识库")
         index_id = rag_id  # 即 CreateIndex 接口返回的 Data.Id，您也可以在阿里云百炼控制台的知识库页面获取。
         query = question
+        logger.info("retrieve_rag request: query=%s", query)
         resp = retrieve_index(client, workspace_id, index_id, query)
         # result = UtilClient.to_jsonstring(resp.body)
         if resp.body.data.nodes[0].text:
-            return resp.body.data.nodes[0].text
+            result = resp.body.data.nodes[0].text
+            logger.info("retrieve_rag success: query=%s result=%s", query, result[:160])
+            return result
         else:
-            return None
+            logger.warning("retrieve_rag empty result: query=%s", query)
+            return ""
     except Exception as e:
-        print(f"发生错误：{e}")
-        return None
+        logger.error(
+            "retrieve_rag exception: query=%s error=%s\n%s",
+            question,
+            str(e),
+            traceback.format_exc(),
+        )
+        return ""
 
 
 if __name__ == "__main__":

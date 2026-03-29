@@ -1,0 +1,360 @@
+2026-03-29 22:39:01,427 [INFO] dashboard_service - dashboard sql query: 
+            SELECT semester
+            FROM course_schedule
+            WHERE semester IS NOT NULL AND semester <> ''
+            GROUP BY semester
+            ORDER BY MAX(id) DESC
+            LIMIT 1
+             params=()
+2026-03-29 22:39:01,447 [INFO] dashboard_service - dashboard sql query: 
+            SELECT
+                id,
+                course_name,
+                class_number,
+                weekday,
+                start_section,
+                end_section,
+                start_week,
+                end_week,
+                teacher,
+                classroom,
+                semester
+            FROM course_schedule
+            WHERE weekday = %s
+         AND semester = %s ORDER BY start_section ASC, end_section ASC, id ASC params=(7, '2025-2026ä¸‹æœŸ')
+2026-03-29 22:39:01,454 [INFO] dashboard_service - dashboard sql query: 
+            SELECT semester
+            FROM course_schedule
+            WHERE semester IS NOT NULL AND semester <> ''
+            GROUP BY semester
+            ORDER BY MAX(id) DESC
+            LIMIT 1
+             params=()
+2026-03-29 22:39:01,457 [INFO] dashboard_service - dashboard sql query: 
+            SELECT
+                id,
+                course_name,
+                class_number,
+                weekday,
+                start_section,
+                end_section,
+                start_week,
+                end_week,
+                teacher,
+                classroom,
+                semester
+            FROM course_schedule
+            WHERE weekday = %s
+         AND semester = %s ORDER BY start_section ASC, end_section ASC, id ASC params=(7, '2025-2026ä¸‹æœŸ')
+2026-03-29 22:39:02,121 [INFO] dashboard_service - dashboard sql query: 
+            SELECT semester
+            FROM course_schedule
+            WHERE semester IS NOT NULL AND semester <> ''
+            GROUP BY semester
+            ORDER BY MAX(id) DESC
+            LIMIT 1
+             params=()
+2026-03-29 22:39:02,126 [INFO] dashboard_service - dashboard sql query: 
+            SELECT
+                id,
+                course_name,
+                class_number,
+                weekday,
+                start_section,
+                end_section,
+                start_week,
+                end_week,
+                teacher,
+                classroom,
+                semester
+            FROM course_schedule
+            WHERE weekday = %s
+         AND semester = %s ORDER BY start_section ASC, end_section ASC, id ASC params=(7, '2025-2026ä¸‹æœŸ')
+2026-03-29 22:39:02,130 [INFO] dashboard_service - dashboard sql query: 
+            SELECT semester
+            FROM course_schedule
+            WHERE semester IS NOT NULL AND semester <> ''
+            GROUP BY semester
+            ORDER BY MAX(id) DESC
+            LIMIT 1
+             params=()
+2026-03-29 22:39:02,134 [INFO] dashboard_service - dashboard sql query: 
+            SELECT
+                id,
+                course_name,
+                class_number,
+                weekday,
+                start_section,
+                end_section,
+                start_week,
+                end_week,
+                teacher,
+                classroom,
+                semester
+            FROM course_schedule
+            WHERE weekday = %s
+         AND semester = %s ORDER BY start_section ASC, end_section ASC, id ASC params=(7, '2025-2026ä¸‹æœŸ')
+2026-03-29 22:39:28,626 [INFO] dashboard_service - dashboard sql query: 
+            SELECT semester
+            FROM course_schedule
+            WHERE semester IS NOT NULL AND semester <> ''
+            GROUP BY semester
+            ORDER BY MAX(id) DESC
+            LIMIT 1
+             params=()
+2026-03-29 22:39:28,648 [INFO] dashboard_service - dashboard sql query: 
+            SELECT
+                id,
+                course_name,
+                class_number,
+                weekday,
+                start_section,
+                end_section,
+                start_week,
+                end_week,
+                teacher,
+                classroom,
+                semester
+            FROM course_schedule
+            WHERE weekday = %s
+         AND semester = %s ORDER BY start_section ASC, end_section ASC, id ASC params=(7, '2025-2026ä¸‹æœŸ')
+2026-03-29 22:39:40,709 [INFO] dashboard_service - dashboard sql query: 
+            SELECT semester
+            FROM course_schedule
+            WHERE semester IS NOT NULL AND semester <> ''
+            GROUP BY semester
+            ORDER BY MAX(id) DESC
+            LIMIT 1
+             params=()
+2026-03-29 22:39:40,716 [INFO] dashboard_service - dashboard sql query: 
+            SELECT
+                id,
+                course_name,
+                class_number,
+                weekday,
+                start_section,
+                end_section,
+                start_week,
+                end_week,
+                teacher,
+                classroom,
+                semester
+            FROM course_schedule
+            WHERE weekday = %s
+         AND semester = %s ORDER BY start_section ASC, end_section ASC, id ASC params=(7, '2025-2026ä¸‹æœŸ')
+2026-03-29 22:39:40,720 [INFO] dashboard_service - dashboard sql query: 
+            SELECT semester
+            FROM course_schedule
+            WHERE semester IS NOT NULL AND semester <> ''
+            GROUP BY semester
+            ORDER BY MAX(id) DESC
+            LIMIT 1
+             params=()
+2026-03-29 22:39:40,723 [INFO] dashboard_service - dashboard sql query: 
+            SELECT
+                id,
+                course_name,
+                class_number,
+                weekday,
+                start_section,
+                end_section,
+                start_week,
+                end_week,
+                teacher,
+                classroom,
+                semester
+            FROM course_schedule
+            WHERE weekday = %s
+         AND semester = %s ORDER BY start_section ASC, end_section ASC, id ASC params=(7, '2025-2026ä¸‹æœŸ')
+2026-03-29 22:40:31,933 [INFO] dashboard_service - dashboard sql query: 
+            SELECT semester
+            FROM course_schedule
+            WHERE semester IS NOT NULL AND semester <> ''
+            GROUP BY semester
+            ORDER BY MAX(id) DESC
+            LIMIT 1
+             params=()
+2026-03-29 22:40:31,940 [INFO] dashboard_service - dashboard sql query: 
+            SELECT
+                id,
+                course_name,
+                class_number,
+                weekday,
+                start_section,
+                end_section,
+                start_week,
+                end_week,
+                teacher,
+                classroom,
+                semester
+            FROM course_schedule
+            WHERE weekday = %s
+         AND semester = %s ORDER BY start_section ASC, end_section ASC, id ASC params=(7, '2025-2026ä¸‹æœŸ')
+2026-03-29 22:40:31,947 [INFO] dashboard_service - dashboard sql query: 
+            SELECT semester
+            FROM course_schedule
+            WHERE semester IS NOT NULL AND semester <> ''
+            GROUP BY semester
+            ORDER BY MAX(id) DESC
+            LIMIT 1
+             params=()
+2026-03-29 22:40:31,955 [INFO] dashboard_service - dashboard sql query: 
+            SELECT
+                id,
+                course_name,
+                class_number,
+                weekday,
+                start_section,
+                end_section,
+                start_week,
+                end_week,
+                teacher,
+                classroom,
+                semester
+            FROM course_schedule
+            WHERE weekday = %s
+         AND semester = %s ORDER BY start_section ASC, end_section ASC, id ASC params=(7, '2025-2026ä¸‹æœŸ')
+2026-03-29 22:40:37,857 [INFO] dashboard_service - dashboard sql query: 
+            SELECT semester
+            FROM course_schedule
+            WHERE semester IS NOT NULL AND semester <> ''
+            GROUP BY semester
+            ORDER BY MAX(id) DESC
+            LIMIT 1
+             params=()
+2026-03-29 22:40:37,862 [INFO] dashboard_service - dashboard sql query: 
+            SELECT
+                id,
+                course_name,
+                class_number,
+                weekday,
+                start_section,
+                end_section,
+                start_week,
+                end_week,
+                teacher,
+                classroom,
+                semester
+            FROM course_schedule
+            WHERE weekday = %s
+         AND semester = %s ORDER BY start_section ASC, end_section ASC, id ASC params=(7, '2025-2026ä¸‹æœŸ')
+2026-03-29 22:40:39,653 [INFO] dashboard_service - dashboard sql query: 
+            SELECT semester
+            FROM course_schedule
+            WHERE semester IS NOT NULL AND semester <> ''
+            GROUP BY semester
+            ORDER BY MAX(id) DESC
+            LIMIT 1
+             params=()
+2026-03-29 22:40:39,658 [INFO] dashboard_service - dashboard sql query: 
+            SELECT
+                id,
+                course_name,
+                class_number,
+                weekday,
+                start_section,
+                end_section,
+                start_week,
+                end_week,
+                teacher,
+                classroom,
+                semester
+            FROM course_schedule
+            WHERE weekday = %s
+         AND semester = %s ORDER BY start_section ASC, end_section ASC, id ASC params=(7, '2025-2026ä¸‹æœŸ')
+2026-03-29 22:40:44,736 [INFO] dashboard_service - dashboard sql query: 
+            SELECT semester
+            FROM course_schedule
+            WHERE semester IS NOT NULL AND semester <> ''
+            GROUP BY semester
+            ORDER BY MAX(id) DESC
+            LIMIT 1
+             params=()
+2026-03-29 22:40:44,744 [INFO] dashboard_service - dashboard sql query: 
+            SELECT
+                id,
+                course_name,
+                class_number,
+                weekday,
+                start_section,
+                end_section,
+                start_week,
+                end_week,
+                teacher,
+                classroom,
+                semester
+            FROM course_schedule
+            WHERE weekday = %s
+         AND semester = %s ORDER BY start_section ASC, end_section ASC, id ASC params=(7, '2025-2026ä¸‹æœŸ')
+2026-03-29 22:40:47,436 [INFO] dashboard_service - dashboard sql query: 
+            SELECT semester
+            FROM course_schedule
+            WHERE semester IS NOT NULL AND semester <> ''
+            GROUP BY semester
+            ORDER BY MAX(id) DESC
+            LIMIT 1
+             params=()
+2026-03-29 22:40:47,443 [INFO] dashboard_service - dashboard sql query: 
+            SELECT
+                id,
+                course_name,
+                class_number,
+                weekday,
+                start_section,
+                end_section,
+                start_week,
+                end_week,
+                teacher,
+                classroom,
+                semester
+            FROM course_schedule
+            WHERE weekday = %s
+         AND semester = %s ORDER BY start_section ASC, end_section ASC, id ASC params=(7, '2025-2026ä¸‹æœŸ')
+2026-03-29 22:40:50,786 [INFO] dashboard_service - dashboard sql query: 
+            SELECT semester
+            FROM course_schedule
+            WHERE semester IS NOT NULL AND semester <> ''
+            GROUP BY semester
+            ORDER BY MAX(id) DESC
+            LIMIT 1
+             params=()
+2026-03-29 22:40:50,790 [INFO] dashboard_service - dashboard sql query: 
+            SELECT
+                id,
+                course_name,
+                class_number,
+                weekday,
+                start_section,
+                end_section,
+                start_week,
+                end_week,
+                teacher,
+                classroom,
+                semester
+            FROM course_schedule
+            WHERE weekday = %s
+         AND semester = %s ORDER BY start_section ASC, end_section ASC, id ASC params=(7, '2025-2026ä¸‹æœŸ')
+2026-03-29 22:40:51,536 [INFO] dashboard_service - dashboard sql query: 
+            SELECT semester
+            FROM course_schedule
+            WHERE semester IS NOT NULL AND semester <> ''
+            GROUP BY semester
+            ORDER BY MAX(id) DESC
+            LIMIT 1
+             params=()
+2026-03-29 22:40:51,544 [INFO] dashboard_service - dashboard sql query: 
+            SELECT
+                id,
+                course_name,
+                class_number,
+                weekday,
+                start_section,
+                end_section,
+                start_week,
+                end_week,
+                teacher,
+                classroom,
+                semester
+            FROM course_schedule
+            WHERE weekday = %s
+         AND semester = %s ORDER BY start_section ASC, end_section ASC, id ASC params=(7, '2025-2026ä¸‹æœŸ')

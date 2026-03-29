@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import sys
+import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -22,11 +23,15 @@ from pydantic import BaseModel, Field
 
 from se_tools.terminal_tools import get_stdio_terminal_tools
 from se_tools.rag_tools import get_stdio_rag_tools
+from se_tools.frontend_tools import get_stdio_frontend_tools
+from se_tools.time_tools import get_stdio_time_tools
 
 from se_model.llm import creat_llm
 from se_model.llm_config import creat_config
 from se_prompts.system_prompts import creat_system_prompt
 from se_tools.cli_tools import get_stdio_cli_tools
+from utils.logger import get_project_logger
+from utils.time_utils import DEFAULT_TIMEZONE, build_time_context_text
 from utils.thread_store import DEFAULT_THREAD_PREVIEW, DEFAULT_THREAD_TITLE, thread_store
 
 
@@ -38,6 +43,8 @@ MONGO_URI = "mongodb://localhost:27017"
 MONGO_DB_NAME =  "docker"
 HOST =  "127.0.0.1"
 PORT = 9826
+
+logger = get_project_logger("secretary_agent", "secretary_agent.log")
 
 
 class ChatRequest(BaseModel):
@@ -149,9 +156,30 @@ def build_user_content(message: str, attachments: list[ChatAttachmentPayload]) -
     return content_blocks
 
 
+def summarize_message(message: str, max_length: int = 120) -> str:
+    text = " ".join(message.strip().split())
+    if len(text) <= max_length:
+        return text
+    return f"{text[:max_length]}..."
+
+
+def summarize_attachments(attachments: list[ChatAttachmentPayload]) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": attachment.name,
+            "type": attachment.type,
+            "size": attachment.size,
+        }
+        for attachment in attachments
+    ]
+
+
 class SecretaryAgentService:
     def __init__(self) -> None:
         self.agent = None
+        self.llm = None
+        self.tools = []
+        self.agent_name = "moss"
         self.checkpointer = None
         self.checkpointer_name = "unknown"
         self._mongo_context = None
@@ -164,11 +192,13 @@ class SecretaryAgentService:
 
             cli_tools = await get_stdio_cli_tools()
             terminal_tools = await get_stdio_terminal_tools()
+            frontend_tools = await get_stdio_frontend_tools()
+            time_tools = await get_stdio_time_tools()
             try:
                 rag_tools = await get_stdio_rag_tools()
             except FileNotFoundError:
                 rag_tools = []
-            system_prompt = creat_system_prompt(agent_name="moss")
+            system_prompt = creat_system_prompt(agent_name=self.agent_name)
             config = creat_config(
                 api_key=API_KEY,
                 base_url=BASE_URL,
@@ -189,12 +219,24 @@ class SecretaryAgentService:
                 self.checkpointer = InMemorySaver()
                 self.checkpointer_name = "memory"
 
+            self.llm = llm
+            self.tools = cli_tools + terminal_tools + rag_tools + frontend_tools + time_tools
+
             self.agent = creat_se_agent(
-                llm=llm,
-                tools=cli_tools+terminal_tools+rag_tools,
+                llm=self.llm,
+                tools=self.tools,
                 checkpointer=self.checkpointer,
                 debug=False,
                 system_prompt=system_prompt,
+            )
+            logger.info(
+                "agent startup complete: checkpointer=%s cli=%d terminal=%d rag=%d frontend=%d time=%d",
+                self.checkpointer_name,
+                len(cli_tools),
+                len(terminal_tools),
+                len(rag_tools),
+                len(frontend_tools),
+                len(time_tools),
             )
 
     async def shutdown(self) -> None:
@@ -203,8 +245,27 @@ class SecretaryAgentService:
             self._mongo_context = None
 
         self.agent = None
+        self.llm = None
+        self.tools = []
         self.checkpointer = None
         self.checkpointer_name = "unknown"
+        logger.info("agent shutdown complete")
+
+    def create_runtime_agent(self, time_context: str):
+        if self.llm is None or self.checkpointer is None:
+            raise RuntimeError("agent 运行时依赖未初始化")
+
+        runtime_system_prompt = creat_system_prompt(
+            agent_name=self.agent_name,
+            current_time_context=time_context,
+        )
+        return creat_se_agent(
+            llm=self.llm,
+            tools=self.tools,
+            checkpointer=self.checkpointer,
+            debug=False,
+            system_prompt=runtime_system_prompt,
+        )
 
     async def ask(
         self,
@@ -214,19 +275,41 @@ class SecretaryAgentService:
     ) -> str:
         attachments = attachments or []
         user_content = build_user_content(message, attachments)
+        time_context = build_time_context_text(DEFAULT_TIMEZONE)
+
+        logger.info(
+            "chat request received: thread_id=%s attachments=%d message=%s attachment_meta=%s time_context=%s",
+            thread_id,
+            len(attachments),
+            summarize_message(message),
+            json.dumps(summarize_attachments(attachments), ensure_ascii=False),
+            summarize_message(time_context, 200),
+        )
 
         await self.startup()
 
         if self.agent is None:
             raise RuntimeError("agent 初始化失败")
 
-        result = await self.agent.ainvoke(
-            input={"messages": [{"role": "user", "content": user_content}]},
-            config=RunnableConfig(configurable={"thread_id": thread_id}),
-        )
+        runtime_agent = self.create_runtime_agent(time_context)
+
+        try:
+            result = await runtime_agent.ainvoke(
+                input={"messages": [{"role": "user", "content": user_content}]},
+                config=RunnableConfig(configurable={"thread_id": thread_id}),
+            )
+        except Exception as exc:
+            logger.error(
+                "chat request failed: thread_id=%s error=%s\n%s",
+                thread_id,
+                str(exc),
+                traceback.format_exc(),
+            )
+            raise
 
         reply = extract_message_text(result["messages"][-1].content).strip()
         if not reply:
+            logger.error("chat request returned empty reply: thread_id=%s", thread_id)
             raise RuntimeError("agent 未返回有效回复")
 
         await thread_store.append_turn(
@@ -234,6 +317,12 @@ class SecretaryAgentService:
             user_content=message.strip(),
             assistant_content=reply,
             user_attachments=[attachment.model_dump() for attachment in attachments],
+        )
+
+        logger.info(
+            "chat request succeeded: thread_id=%s reply=%s",
+            thread_id,
+            summarize_message(reply),
         )
 
         return reply
@@ -246,25 +335,48 @@ class SecretaryAgentService:
     ) -> AsyncIterator[dict[str, str]]:
         attachments = attachments or []
         user_content = build_user_content(message, attachments)
+        time_context = build_time_context_text(DEFAULT_TIMEZONE)
+
+        logger.info(
+            "stream request received: thread_id=%s attachments=%d message=%s attachment_meta=%s time_context=%s",
+            thread_id,
+            len(attachments),
+            summarize_message(message),
+            json.dumps(summarize_attachments(attachments), ensure_ascii=False),
+            summarize_message(time_context, 200),
+        )
 
         await self.startup()
 
         if self.agent is None:
             raise RuntimeError("agent 初始化失败")
 
+        runtime_agent = self.create_runtime_agent(time_context)
+
         final_state = None
-        async for state in self.agent.astream(
-            input={"messages": [{"role": "user", "content": user_content}]},
-            config=RunnableConfig(configurable={"thread_id": thread_id}),
-            stream_mode="values",
-        ):
-            final_state = state
+        try:
+            async for state in runtime_agent.astream(
+                input={"messages": [{"role": "user", "content": user_content}]},
+                config=RunnableConfig(configurable={"thread_id": thread_id}),
+                stream_mode="values",
+            ):
+                final_state = state
+        except Exception as exc:
+            logger.error(
+                "stream request failed: thread_id=%s error=%s\n%s",
+                thread_id,
+                str(exc),
+                traceback.format_exc(),
+            )
+            raise
 
         if not isinstance(final_state, dict) or "messages" not in final_state:
+            logger.error("stream request returned invalid final_state: thread_id=%s", thread_id)
             raise RuntimeError("agent 未返回有效流式状态")
 
         reply = extract_message_text(final_state["messages"][-1].content).strip()
         if not reply:
+            logger.error("stream request returned empty reply: thread_id=%s", thread_id)
             raise RuntimeError("agent 未返回有效回复")
 
         stored_thread = await thread_store.append_turn(
@@ -272,6 +384,12 @@ class SecretaryAgentService:
             user_content=message.strip(),
             assistant_content=reply,
             user_attachments=[attachment.model_dump() for attachment in attachments],
+        )
+
+        logger.info(
+            "stream request succeeded: thread_id=%s reply=%s",
+            thread_id,
+            summarize_message(reply),
         )
 
         for delta in split_text_for_stream(reply):

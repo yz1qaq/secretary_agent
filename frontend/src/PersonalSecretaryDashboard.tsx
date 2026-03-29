@@ -9,42 +9,25 @@ import {
   useState,
 } from 'react'
 
-type NavigationKey =
-  | 'dashboard'
-  | 'today'
-  | 'tasks'
+import { LifePanel, lifeWorkspaceCopy } from './dashboard/regions/LifePanel'
+import {
+  SidebarNav,
+  sidebarNavItems,
+} from './dashboard/regions/SidebarNav'
+import { StudyPanel, studyWorkspaceCopy } from './dashboard/regions/StudyPanel'
+import {
+  TodayPlanPanel,
+  todayPlanWorkspaceCopy,
+} from './dashboard/regions/TodayPlanPanel'
+import { NavigationKey } from './dashboard/types'
 
 type MessageRole = 'assistant' | 'user'
-type PriorityLevel = '高' | '中' | '低'
 
 const API_BASE_URL = (
   import.meta.env.VITE_SECRETARY_API_URL || 'http://127.0.0.1:9826'
 ).replace(/\/$/, '')
 const CHAT_BACKEND_MODE = import.meta.env.VITE_SECRETARY_CHAT_MODE || 'modern'
 const USE_MODERN_CHAT_API = CHAT_BACKEND_MODE === 'modern'
-
-interface NavItemData {
-  key: NavigationKey
-  label: string
-}
-
-interface StatCardData {
-  label: string
-  value: string
-  hint: string
-}
-
-interface TimelineEntry {
-  time: string
-  title: string
-  type: '固定安排' | '建议任务'
-}
-
-interface TaskData {
-  title: string
-  deadline: string
-  priority: PriorityLevel
-}
 
 interface PendingAttachment {
   id: string
@@ -157,73 +140,6 @@ interface StreamChunk {
   error?: string
 }
 
-interface SidebarProps {
-  activeKey: NavigationKey
-  items: NavItemData[]
-  onChange: (key: NavigationKey) => void
-}
-
-type StatCardProps = StatCardData
-type TimelineItemProps = TimelineEntry
-type TaskItemProps = TaskData
-
-const navigationItems: NavItemData[] = [
-  { key: 'dashboard', label: '今日计划' },
-  { key: 'today', label: '学习' },
-  { key: 'tasks', label: '生活' },
-]
-
-const statCards: StatCardData[] = [
-  { label: '今日课程', value: '1', hint: '09:00 有数据库课程' },
-  { label: '学习任务', value: '2', hint: '论文阅读与实验总结' },
-  { label: '可专注时间', value: '4.5 小时', hint: '适合安排深度学习' },
-  { label: '晚间复盘', value: '1 项', hint: '完成后整理今日笔记' },
-]
-
-const timelineEntries: TimelineEntry[] = [
-  {
-    time: '09:00 - 10:30',
-    title: '课程：数据库系统',
-    type: '固定安排',
-  },
-  {
-    time: '14:00 - 16:00',
-    title: '阅读论文并做笔记',
-    type: '建议任务',
-  },
-  {
-    time: '19:30 - 21:00',
-    title: '整理实验结果',
-    type: '建议任务',
-  },
-]
-
-const lifeTimelineEntries: TimelineEntry[] = [
-  {
-    time: '21:00 - 22:00',
-    title: '每日健身计划',
-    type: '固定安排',
-  },
-]
-
-const todayPlanCards: StatCardData[] = [
-  { label: '学习安排', value: '3 项', hint: '课程、论文阅读、实验总结' },
-  { label: '生活安排', value: '1 项', hint: '21:00 开始健身计划' },
-  { label: '今日重点', value: '先学后练', hint: '白天学习，晚间锻炼' },
-]
-
-const tasks: TaskData[] = [
-  { title: '完善实验基线图表', deadline: '今天 22:00', priority: '高' },
-  { title: '撰写相关工作初稿', deadline: '周三 18:00', priority: '中' },
-  { title: '回复导师邮件', deadline: '今天 17:30', priority: '高' },
-  { title: '准备会议讨论要点', deadline: '周五 10:00', priority: '中' },
-  { title: '更新阅读清单', deadline: '本周内', priority: '低' },
-]
-
-const lifeTasks: TaskData[] = [
-  { title: '21:00 健身训练', deadline: '今天 21:00 - 22:00', priority: '中' },
-]
-
 const defaultAssistantMessages: ChatMessage[] = [
   {
     id: 'assistant-welcome',
@@ -253,22 +169,6 @@ function formatClock(date: Date): string {
 
 function formatThreadTitle(thread: ChatThread): string {
   return thread.isDraft ? `${thread.title}（未保存）` : thread.title
-}
-
-function getPriorityClasses(priority: PriorityLevel): string {
-  if (priority === '高') {
-    return 'bg-red-50 text-red-600 ring-1 ring-inset ring-red-200'
-  }
-  if (priority === '中') {
-    return 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200'
-  }
-  return 'bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200'
-}
-
-function getTimelineTagClasses(type: TimelineEntry['type']): string {
-  return type === '固定安排'
-    ? 'bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200'
-    : 'bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200'
 }
 
 function isImageType(type: string): boolean {
@@ -595,85 +495,6 @@ async function sendChatPayload(
   }
 }
 
-function Sidebar({ activeKey, items, onChange }: SidebarProps) {
-  return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white px-5 py-6">
-      <div className="mb-8">
-        <p className="text-xs font-medium tracking-[0.16em] text-slate-400">
-          工作区
-        </p>
-        <h1 className="mt-2 text-xl font-semibold text-slate-900">
-          个人秘书 Agent
-        </h1>
-      </div>
-
-      <nav className="space-y-1.5">
-        {items.map((item) => {
-          const isActive = item.key === activeKey
-          return (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => onChange(item.key)}
-              className={`flex w-full items-center rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${
-                isActive
-                  ? 'bg-indigo-50 text-indigo-700'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              {item.label}
-            </button>
-          )
-        })}
-      </nav>
-    </aside>
-  )
-}
-
-function StatCard({ label, value, hint }: StatCardProps) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-sm text-slate-500">{label}</p>
-      <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-900">
-        {value}
-      </p>
-      <p className="mt-2 text-sm text-slate-500">{hint}</p>
-    </div>
-  )
-}
-
-function TimelineItem({ time, title, type }: TimelineItemProps) {
-  return (
-    <div className="flex items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div>
-        <p className="text-sm font-medium text-slate-500">{time}</p>
-        <p className="mt-2 text-base font-semibold text-slate-900">{title}</p>
-      </div>
-      <span
-        className={`rounded-full px-3 py-1 text-xs font-medium ${getTimelineTagClasses(type)}`}
-      >
-        {type}
-      </span>
-    </div>
-  )
-}
-
-function TaskItem({ title, deadline, priority }: TaskItemProps) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-b border-slate-100 py-4 last:border-b-0 last:pb-0 first:pt-0">
-      <div>
-        <p className="text-sm font-medium text-slate-900">{title}</p>
-        <p className="mt-1 text-sm text-slate-500">截止时间：{deadline}</p>
-      </div>
-      <span
-        className={`rounded-full px-3 py-1 text-xs font-medium ${getPriorityClasses(priority)}`}
-      >
-        {priority}
-      </span>
-    </div>
-  )
-}
-
 function MessageBubble({
   message,
 }: {
@@ -737,46 +558,19 @@ function MessageBubble({
   )
 }
 
-function EmptyStateCard({
-  title,
-  description,
-  action,
-}: {
-  title: string
-  description: string
-  action?: ReactNode
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h3 className="text-base font-semibold text-slate-900">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
-      {action ? <div className="mt-4">{action}</div> : null}
-    </div>
-  )
-}
-
 function getWorkspaceCopy(activeNav: NavigationKey): {
   title: string
   subtitle: string
 } {
   if (activeNav === 'today') {
-    return {
-      title: '学习',
-      subtitle: '只展示今天和学习相关的课程、任务与专注安排。',
-    }
+    return studyWorkspaceCopy
   }
 
   if (activeNav === 'tasks') {
-    return {
-      title: '生活',
-      subtitle: '当前先模拟每日固定的 21:00 健身计划，后续可继续扩展。',
-    }
+    return lifeWorkspaceCopy
   }
 
-  return {
-    title: '今日计划',
-    subtitle: '汇总学习与生活中今天应该执行的安排，帮助你快速进入状态。',
-  }
+  return todayPlanWorkspaceCopy
 }
 
 export default function PersonalSecretaryDashboard() {
@@ -1204,119 +998,16 @@ export default function PersonalSecretaryDashboard() {
   }
 
   function renderMainContent(): ReactNode {
-    const learningSections = (
-      <div className="space-y-8">
-        <section>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {statCards.map((stat) => (
-              <StatCard key={stat.label} {...stat} />
-            ))}
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">学习任务</h2>
-            <span className="text-sm text-slate-500">按优先级推进</span>
-          </div>
-          <div className="mt-4">
-            {tasks.map((task) => (
-              <TaskItem key={task.title} {...task} />
-            ))}
-          </div>
-        </section>
-      </div>
-    )
-
-    const lifeSections = (
-      <div className="space-y-8">
-        <section>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <StatCard
-              label="今晚安排"
-              value="21:00"
-              hint="固定执行一小时健身计划"
-            />
-            <StatCard
-              label="生活习惯"
-              value="1 项"
-              hint="先从稳定的晚间锻炼开始"
-            />
-            <StatCard
-              label="今日目标"
-              value="动起来"
-              hint="完成运动后简单拉伸和补水"
-            />
-          </div>
-        </section>
-
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">生活安排</h2>
-            <span className="text-sm text-slate-500">固定习惯</span>
-          </div>
-          <div className="space-y-3">
-            {lifeTimelineEntries.map((item) => (
-              <TimelineItem key={`${item.time}-${item.title}`} {...item} />
-            ))}
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">生活提醒</h2>
-            <span className="text-sm text-slate-500">模拟内容</span>
-          </div>
-          <div className="mt-4">
-            {lifeTasks.map((task) => (
-              <TaskItem key={task.title} {...task} />
-            ))}
-          </div>
-        </section>
-      </div>
-    )
-
     if (activeNav === 'dashboard') {
-      const todayTimeline = [...timelineEntries, ...lifeTimelineEntries].sort((a, b) =>
-        a.time.localeCompare(b.time),
-      )
-
-      return (
-        <div className="space-y-8">
-          <section>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              {todayPlanCards.map((stat) => (
-                <StatCard key={stat.label} {...stat} />
-              ))}
-            </div>
-          </section>
-
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-slate-900">今日执行清单</h2>
-              <span className="text-sm text-slate-500">学习 + 生活</span>
-            </div>
-            <div className="space-y-3">
-              {todayTimeline.map((item) => (
-                <TimelineItem key={`${item.time}-${item.title}`} {...item} />
-              ))}
-            </div>
-          </section>
-
-          <EmptyStateCard
-            title="今日建议"
-            description="优先完成上午课程和下午的学习任务，21:00 之后切换到健身计划，让学习和生活安排各自保持节奏。"
-          />
-        </div>
-      )
+      return <TodayPlanPanel />
     }
 
     if (activeNav === 'today') {
-      return learningSections
+      return <StudyPanel />
     }
 
     if (activeNav === 'tasks') {
-      return lifeSections
+      return <LifePanel />
     }
 
     return null
@@ -1331,9 +1022,9 @@ export default function PersonalSecretaryDashboard() {
   return (
     <div className="h-screen bg-slate-50 text-slate-900">
       <div className="flex h-full min-w-[1440px]">
-        <Sidebar
+        <SidebarNav
           activeKey={activeNav}
-          items={navigationItems}
+          items={sidebarNavItems}
           onChange={setActiveNav}
         />
 
