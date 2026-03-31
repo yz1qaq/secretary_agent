@@ -77,6 +77,7 @@ class ThreadStore:
         title: str | None = None,
         preview: str | None = None,
         is_draft: bool = True,
+        is_hidden: bool = False,
     ) -> dict[str, Any]:
         timestamp = _now_iso()
         return {
@@ -84,6 +85,7 @@ class ThreadStore:
             "title": title or DEFAULT_THREAD_TITLE,
             "preview": preview or DEFAULT_THREAD_PREVIEW,
             "is_draft": is_draft,
+            "is_hidden": is_hidden,
             "created_at": timestamp,
             "updated_at": timestamp,
             "messages": [],
@@ -112,7 +114,11 @@ class ThreadStore:
         async with self._lock:
             payload = self._read_store_unlocked()
             threads = sorted(
-                payload["threads"],
+                [
+                    thread
+                    for thread in payload["threads"]
+                    if not bool(thread.get("is_hidden", False))
+                ],
                 key=lambda item: str(item.get("updated_at") or ""),
                 reverse=True,
             )
@@ -135,6 +141,7 @@ class ThreadStore:
         title: str | None = None,
         preview: str | None = None,
         is_draft: bool = True,
+        is_hidden: bool = False,
     ) -> dict[str, Any]:
         async with self._lock:
             payload = self._read_store_unlocked()
@@ -147,6 +154,43 @@ class ThreadStore:
                 title=title,
                 preview=preview,
                 is_draft=is_draft,
+                is_hidden=is_hidden,
+            )
+            payload["threads"].append(thread)
+            self._write_store_unlocked(payload)
+            return deepcopy(thread)
+
+    async def ensure_thread(
+        self,
+        thread_id: str,
+        *,
+        title: str | None = None,
+        preview: str | None = None,
+        is_draft: bool = True,
+        is_hidden: bool = False,
+    ) -> dict[str, Any]:
+        async with self._lock:
+            payload = self._read_store_unlocked()
+            for thread in payload["threads"]:
+                if str(thread.get("thread_id")) != thread_id:
+                    continue
+
+                if title is not None:
+                    thread["title"] = title
+                if preview is not None:
+                    thread["preview"] = preview
+                thread["is_draft"] = is_draft
+                thread["is_hidden"] = is_hidden
+                thread["updated_at"] = _now_iso()
+                self._write_store_unlocked(payload)
+                return deepcopy(thread)
+
+            thread = self._create_thread_record(
+                thread_id,
+                title=title,
+                preview=preview,
+                is_draft=is_draft,
+                is_hidden=is_hidden,
             )
             payload["threads"].append(thread)
             self._write_store_unlocked(payload)
@@ -159,6 +203,23 @@ class ThreadStore:
                 if str(thread.get("thread_id")) == thread_id:
                     return deepcopy(thread)
         return None
+
+    async def get_recent_messages(
+        self,
+        thread_id: str,
+        *,
+        limit: int = 6,
+    ) -> list[dict[str, Any]]:
+        async with self._lock:
+            payload = self._read_store_unlocked()
+            for thread in payload["threads"]:
+                if str(thread.get("thread_id")) != thread_id:
+                    continue
+                messages = thread.get("messages", [])
+                if not isinstance(messages, list):
+                    return []
+                return deepcopy(messages[-limit:])
+        return []
 
     async def update_thread(
         self,

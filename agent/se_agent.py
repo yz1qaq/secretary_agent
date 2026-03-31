@@ -13,24 +13,21 @@ if str(ROOT_DIR) not in sys.path:
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from langchain.agents import create_agent
-from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.checkpoint.mongodb import MongoDBSaver
 from pydantic import BaseModel, Field
 
-from se_tools.terminal_tools import get_stdio_terminal_tools
-from se_tools.rag_tools import get_stdio_rag_tools
 from se_tools.frontend_tools import get_stdio_frontend_tools
+from se_tools.cli_tools import get_stdio_cli_tools
+from se_tools.rag_tools import get_stdio_rag_tools
+from se_tools.terminal_tools import get_stdio_terminal_tools
 from se_tools.time_tools import get_stdio_time_tools
-
 from se_model.llm import creat_llm
 from se_model.llm_config import creat_config
 from se_prompts.system_prompts import creat_system_prompt
-from se_tools.cli_tools import get_stdio_cli_tools
 from utils.logger import get_project_logger
+from utils.memoryos import MemoryOSService
 from utils.time_utils import DEFAULT_TIMEZONE, build_time_context_text
 from utils.thread_store import DEFAULT_THREAD_PREVIEW, DEFAULT_THREAD_TITLE, thread_store
 
@@ -39,10 +36,26 @@ API_KEY = os.getenv("DASHSCOPE_API_KEY")
 BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 MODEL_NAME = "qwen3.5-plus"
 DEFAULT_THREAD_ID = 1
-MONGO_URI = "mongodb://localhost:27017"
-MONGO_DB_NAME =  "docker"
 HOST =  "127.0.0.1"
 PORT = 9826
+MEMORY_BACKEND_NAME = "memoryos"
+DEFAULT_MEMORY_USER_ID = "default_user"
+SYSTEM_REFRESH_THREAD_IDS = {
+    "study": "system-refresh-study",
+    "life": "system-refresh-life",
+}
+PANEL_REFRESH_PROMPTS = {
+    "study": (
+        "查询今日信息，并且使用前端工具更新前端界面中的 study-panel 区域。"
+        "你必须先读取当前前端区域，再修改学习界面内容，并执行前端构建校验。"
+        "不要修改其他区域。"
+    ),
+    "life": (
+        "查询今日生活信息，并且使用前端工具更新前端界面中的 life-panel 区域。"
+        "你必须先读取当前前端区域，再修改生活界面内容，并执行前端构建校验。"
+        "不要修改其他区域。"
+    ),
+}
 
 logger = get_project_logger("secretary_agent", "secretary_agent.log")
 
@@ -68,6 +81,7 @@ class ChatResponse(BaseModel):
     reply: str
     thread_id: str
     checkpointer: str
+    memory_backend: str | None = None
 
 
 class ThreadCreateRequest(BaseModel):
@@ -83,14 +97,27 @@ class ThreadUpdateRequest(BaseModel):
     is_draft: bool | None = None
 
 
-def creat_se_agent(llm, tools, checkpointer, debug: bool, system_prompt: str):
-    agent = create_agent(
+class PanelRefreshRequest(BaseModel):
+    panel: str = Field(..., description="需要静默刷新的面板，支持 study 或 life")
+
+
+class PanelRefreshResponse(BaseModel):
+    status: str
+    panel: str
+    message: str
+    thread_id: str
+
+
+def creat_se_agent(llm, tools, debug: bool, system_prompt: str, checkpointer=None):
+    agent_kwargs = dict(
         model=llm,
         tools=tools,
-        checkpointer=checkpointer,
         debug=debug,
         system_prompt=system_prompt,
     )
+    if checkpointer is not None:
+        agent_kwargs["checkpointer"] = checkpointer
+    agent = create_agent(**agent_kwargs)
     return agent
 
 
@@ -174,15 +201,82 @@ def summarize_attachments(attachments: list[ChatAttachmentPayload]) -> list[dict
     ]
 
 
+def build_memory_record_input(
+    message: str,
+    attachments: list[ChatAttachmentPayload],
+) -> str:
+    text = message.strip()
+    if not attachments:
+        return text
+
+    attachment_names = ", ".join(attachment.name for attachment in attachments[:3])
+    attachment_note = f"用户上传了{len(attachments)}张图片附件：{attachment_names}"
+    if text:
+        return f"{text}\n[{attachment_note}]"
+    return attachment_note
+
+
+def format_attachment_note(attachment: dict[str, Any]) -> str:
+    name = str(attachment.get("name") or "未命名附件")
+    mime_type = str(attachment.get("type") or "application/octet-stream")
+    if mime_type.startswith("image/"):
+        return f"[历史图片附件：{name}]"
+
+    text_summary = str(attachment.get("textSummary") or attachment.get("text_summary") or "").strip()
+    if text_summary:
+        return f"[历史附件：{name} 摘要：{summarize_message(text_summary, 80)}]"
+    return f"[历史附件：{name}]"
+
+
+def format_thread_history_content(message: dict[str, Any]) -> str:
+    base_content = str(message.get("content") or "").strip()
+    attachments = message.get("attachments") or []
+    attachment_notes = [
+        format_attachment_note(attachment)
+        for attachment in attachments
+        if isinstance(attachment, dict)
+    ]
+    if attachment_notes:
+        if base_content:
+            return f"{base_content}\n" + "\n".join(attachment_notes)
+        return "\n".join(attachment_notes)
+    return base_content
+
+
+def build_thread_history_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    prompt_messages: list[dict[str, Any]] = []
+    for message in messages:
+        role = "user" if str(message.get("role")) == "user" else "assistant"
+        content = format_thread_history_content(message)
+        if not content:
+            continue
+        prompt_messages.append({"role": role, "content": content})
+    return prompt_messages
+
+
+def summarize_memory_results(results: dict[str, object]) -> str:
+    summary_parts: list[str] = []
+    for key in (
+        "short_term_memory",
+        "retrieved_pages",
+        "retrieved_user_knowledge",
+        "retrieved_assistant_knowledge",
+    ):
+        value = results.get(key)
+        count = len(value) if isinstance(value, list) else 0
+        summary_parts.append(f"{key}={count}")
+    return ", ".join(summary_parts)
+
+
 class SecretaryAgentService:
     def __init__(self) -> None:
         self.agent = None
         self.llm = None
         self.tools = []
         self.agent_name = "moss"
-        self.checkpointer = None
-        self.checkpointer_name = "unknown"
-        self._mongo_context = None
+        self.memory_service: MemoryOSService | None = None
+        self.memory_backend_name = MEMORY_BACKEND_NAME
+        self.checkpointer_name = MEMORY_BACKEND_NAME
         self._startup_lock = asyncio.Lock()
 
     async def startup(self) -> None:
@@ -206,32 +300,23 @@ class SecretaryAgentService:
             )
             llm = creat_llm(config)
 
-            #默认使用mongo连接，如果有问题就使用内存存储
-            try:
-                self._mongo_context = MongoDBSaver.from_conn_string(
-                    conn_string=MONGO_URI,
-                    db_name=MONGO_DB_NAME,
-                )
-                self.checkpointer = self._mongo_context.__enter__()
-                self.checkpointer_name = "mongodb"
-            except Exception:
-                self._mongo_context = None
-                self.checkpointer = InMemorySaver()
-                self.checkpointer_name = "memory"
-
             self.llm = llm
             self.tools = cli_tools + terminal_tools + rag_tools + frontend_tools + time_tools
+            self.memory_service = MemoryOSService(
+                user_id=DEFAULT_MEMORY_USER_ID,
+                assistant_id=self.agent_name,
+                data_storage_path=ROOT_DIR / "data" / "memoryos",
+            )
 
             self.agent = creat_se_agent(
                 llm=self.llm,
                 tools=self.tools,
-                checkpointer=self.checkpointer,
                 debug=False,
                 system_prompt=system_prompt,
             )
             logger.info(
-                "agent startup complete: checkpointer=%s cli=%d terminal=%d rag=%d frontend=%d time=%d",
-                self.checkpointer_name,
+                "agent startup complete: memory_backend=%s cli=%d terminal=%d rag=%d frontend=%d time=%d",
+                self.memory_backend_name,
                 len(cli_tools),
                 len(terminal_tools),
                 len(rag_tools),
@@ -240,29 +325,25 @@ class SecretaryAgentService:
             )
 
     async def shutdown(self) -> None:
-        if self._mongo_context is not None:
-            self._mongo_context.__exit__(None, None, None)
-            self._mongo_context = None
-
         self.agent = None
         self.llm = None
         self.tools = []
-        self.checkpointer = None
-        self.checkpointer_name = "unknown"
+        self.memory_service = None
+        self.checkpointer_name = MEMORY_BACKEND_NAME
         logger.info("agent shutdown complete")
 
-    def create_runtime_agent(self, time_context: str):
-        if self.llm is None or self.checkpointer is None:
+    def create_runtime_agent(self, time_context: str, memory_context: str):
+        if self.llm is None:
             raise RuntimeError("agent 运行时依赖未初始化")
 
         runtime_system_prompt = creat_system_prompt(
             agent_name=self.agent_name,
             current_time_context=time_context,
+            current_memory_context=memory_context,
         )
         return creat_se_agent(
             llm=self.llm,
             tools=self.tools,
-            checkpointer=self.checkpointer,
             debug=False,
             system_prompt=runtime_system_prompt,
         )
@@ -272,9 +353,12 @@ class SecretaryAgentService:
         message: str,
         thread_id: str,
         attachments: list[ChatAttachmentPayload] | None = None,
+        *,
+        store_in_memory: bool = True,
     ) -> str:
         attachments = attachments or []
         user_content = build_user_content(message, attachments)
+        memory_record_input = build_memory_record_input(message, attachments)
         time_context = build_time_context_text(DEFAULT_TIMEZONE)
 
         logger.info(
@@ -288,15 +372,28 @@ class SecretaryAgentService:
 
         await self.startup()
 
-        if self.agent is None:
+        if self.agent is None or self.memory_service is None:
             raise RuntimeError("agent 初始化失败")
 
-        runtime_agent = self.create_runtime_agent(time_context)
+        recent_messages = await thread_store.get_recent_messages(thread_id, limit=6)
+        thread_history_messages = build_thread_history_messages(recent_messages)
+        memory_context, memory_results = await self.memory_service.build_prompt_context(
+            thread_id=thread_id,
+            query=memory_record_input,
+        )
+        runtime_agent = self.create_runtime_agent(time_context, memory_context)
+        input_messages = thread_history_messages + [{"role": "user", "content": user_content}]
+
+        logger.info(
+            "chat prompt context prepared: thread_id=%s history_messages=%d memory=%s",
+            thread_id,
+            len(thread_history_messages),
+            summarize_memory_results(memory_results),
+        )
 
         try:
             result = await runtime_agent.ainvoke(
-                input={"messages": [{"role": "user", "content": user_content}]},
-                config=RunnableConfig(configurable={"thread_id": thread_id}),
+                input={"messages": input_messages},
             )
         except Exception as exc:
             logger.error(
@@ -318,11 +415,22 @@ class SecretaryAgentService:
             assistant_content=reply,
             user_attachments=[attachment.model_dump() for attachment in attachments],
         )
+        if store_in_memory:
+            await self.memory_service.add_memory(
+                user_input=memory_record_input,
+                agent_response=reply,
+                thread_id=thread_id,
+                meta_data={
+                    "attachments": summarize_attachments(attachments),
+                },
+            )
 
         logger.info(
-            "chat request succeeded: thread_id=%s reply=%s",
+            "chat request succeeded: thread_id=%s reply=%s memory_backend=%s store_in_memory=%s",
             thread_id,
             summarize_message(reply),
+            self.memory_backend_name,
+            store_in_memory,
         )
 
         return reply
@@ -332,9 +440,12 @@ class SecretaryAgentService:
         message: str,
         thread_id: str,
         attachments: list[ChatAttachmentPayload] | None = None,
+        *,
+        store_in_memory: bool = True,
     ) -> AsyncIterator[dict[str, str]]:
         attachments = attachments or []
         user_content = build_user_content(message, attachments)
+        memory_record_input = build_memory_record_input(message, attachments)
         time_context = build_time_context_text(DEFAULT_TIMEZONE)
 
         logger.info(
@@ -348,16 +459,29 @@ class SecretaryAgentService:
 
         await self.startup()
 
-        if self.agent is None:
+        if self.agent is None or self.memory_service is None:
             raise RuntimeError("agent 初始化失败")
 
-        runtime_agent = self.create_runtime_agent(time_context)
+        recent_messages = await thread_store.get_recent_messages(thread_id, limit=6)
+        thread_history_messages = build_thread_history_messages(recent_messages)
+        memory_context, memory_results = await self.memory_service.build_prompt_context(
+            thread_id=thread_id,
+            query=memory_record_input,
+        )
+        runtime_agent = self.create_runtime_agent(time_context, memory_context)
+        input_messages = thread_history_messages + [{"role": "user", "content": user_content}]
+
+        logger.info(
+            "stream prompt context prepared: thread_id=%s history_messages=%d memory=%s",
+            thread_id,
+            len(thread_history_messages),
+            summarize_memory_results(memory_results),
+        )
 
         final_state = None
         try:
             async for state in runtime_agent.astream(
-                input={"messages": [{"role": "user", "content": user_content}]},
-                config=RunnableConfig(configurable={"thread_id": thread_id}),
+                input={"messages": input_messages},
                 stream_mode="values",
             ):
                 final_state = state
@@ -385,11 +509,22 @@ class SecretaryAgentService:
             assistant_content=reply,
             user_attachments=[attachment.model_dump() for attachment in attachments],
         )
+        if store_in_memory:
+            await self.memory_service.add_memory(
+                user_input=memory_record_input,
+                agent_response=reply,
+                thread_id=thread_id,
+                meta_data={
+                    "attachments": summarize_attachments(attachments),
+                },
+            )
 
         logger.info(
-            "stream request succeeded: thread_id=%s reply=%s",
+            "stream request succeeded: thread_id=%s reply=%s memory_backend=%s store_in_memory=%s",
             thread_id,
             summarize_message(reply),
+            self.memory_backend_name,
+            store_in_memory,
         )
 
         for delta in split_text_for_stream(reply):
@@ -434,6 +569,7 @@ async def health_check():
         "status": "running",
         "message": "秘书服务正常运行",
         "checkpointer": agent_service.checkpointer_name,
+        "memory_backend": agent_service.memory_backend_name,
     }
 
 
@@ -507,6 +643,44 @@ async def delete_chat_thread(thread_id: str):
     }
 
 
+@app.post("/api/panel-refresh", response_model=PanelRefreshResponse)
+async def panel_refresh(payload: PanelRefreshRequest):
+    panel = payload.panel.strip().lower()
+    if panel not in PANEL_REFRESH_PROMPTS:
+        raise HTTPException(status_code=400, detail="panel 仅支持 study 或 life")
+
+    system_thread_id = SYSTEM_REFRESH_THREAD_IDS[panel]
+    system_thread_title = f"{panel} 静默刷新"
+    system_thread_preview = f"{panel} 面板后台刷新记录"
+
+    await thread_store.ensure_thread(
+        system_thread_id,
+        title=system_thread_title,
+        preview=system_thread_preview,
+        is_draft=False,
+        is_hidden=True,
+    )
+
+    try:
+        reply = await agent_service.ask(
+            message=PANEL_REFRESH_PROMPTS[panel],
+            thread_id=system_thread_id,
+            attachments=[],
+            store_in_memory=False,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return PanelRefreshResponse(
+        status="success",
+        panel=panel,
+        message=reply,
+        thread_id=system_thread_id,
+    )
+
+
 @app.post("/", response_model=ChatResponse)
 async def chat(payload: ChatRequest):
     try:
@@ -525,6 +699,7 @@ async def chat(payload: ChatRequest):
         reply=reply,
         thread_id=str(payload.thread_id),
         checkpointer=agent_service.checkpointer_name,
+        memory_backend=agent_service.memory_backend_name,
     )
 
 

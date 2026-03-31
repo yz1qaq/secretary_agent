@@ -1,7 +1,13 @@
 /* eslint-disable react-refresh/only-export-components */
 
 import { StatCard, TaskItem, TimelineItem } from '../ui'
-import { StatCardData, TaskData, TimelineEntry, WorkspaceCopy } from '../types'
+import {
+  PanelRefreshProps,
+  StatCardData,
+  TaskData,
+  TimelineEntry,
+  WorkspaceCopy,
+} from '../types'
 
 export const lifeWorkspaceCopy: WorkspaceCopy = {
   title: '生活',
@@ -38,7 +44,12 @@ export const lifeTasks: TaskData[] = [
   { title: '21:00 健身训练', deadline: '今天 21:00 - 22:00', priority: '中' },
 ]
 
-export function LifePanel() {
+export function LifePanel({
+  onRefresh,
+  refreshing = false,
+  refreshMessage = '',
+  refreshError = '',
+}: PanelRefreshProps) {
   return (
     <div className="space-y-8">
       <section>
@@ -52,8 +63,26 @@ export function LifePanel() {
       <section className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-900">生活安排</h2>
-          <span className="text-sm text-slate-500">固定习惯</span>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-slate-500">固定习惯</span>
+            <button
+              type="button"
+              onClick={() => {
+                void onRefresh?.()
+              }}
+              disabled={refreshing}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {refreshing ? '刷新中...' : '刷新'}
+            </button>
+          </div>
         </div>
+        {refreshError ? (
+          <p className="text-sm text-red-600">{refreshError}</p>
+        ) : null}
+        {!refreshError && refreshMessage ? (
+          <p className="text-sm text-emerald-600">{refreshMessage}</p>
+        ) : null}
         <div className="space-y-3">
           {lifeTimelineEntries.map((item) => (
             <TimelineItem key={`${item.time}-${item.title}`} {...item} />

@@ -1,7 +1,13 @@
 /* eslint-disable react-refresh/only-export-components */
 
 import { StatCard, TaskItem, TimelineItem } from '../ui'
-import { StatCardData, TaskData, TimelineEntry, WorkspaceCopy } from '../types'
+import {
+  PanelRefreshProps,
+  StatCardData,
+  TaskData,
+  TimelineEntry,
+  WorkspaceCopy,
+} from '../types'
 
 export const studyWorkspaceCopy: WorkspaceCopy = {
   title: '学习',
@@ -10,8 +16,8 @@ export const studyWorkspaceCopy: WorkspaceCopy = {
 
 export const studyStatCards: StatCardData[] = [
   { label: '本周课程', value: '8', hint: '周一至周五共 8 节课' },
-  { label: '今日课程', value: '0', hint: '今天是星期日，无课程' },
-  { label: '明日课程', value: '2', hint: '15:30 和 19:00 各有 1 节' },
+  { label: '今日课程', value: '4', hint: '星期二有 4 节课' },
+  { label: '明日课程', value: '4', hint: '星期三有 4 节课' },
   { label: '学习任务', value: '5', hint: '按优先级完成' },
 ]
 
@@ -41,22 +47,32 @@ export const weeklySchedule = {
   '星期日': [],
 }
 
-// 今日（3月29日 星期日）真实时间安排
+// 今日（3月31日 星期二）真实时间安排 - 已更新当前状态（13:24）
 export const studyTimelineEntries: TimelineEntry[] = [
   {
-    time: '09:00 - 11:30',
-    title: '自习：预习明天英语写作课程',
-    type: '建议任务',
-  },
-  {
-    time: '11:30 - 14:00',
-    title: '午餐 & 午休',
+    time: '08:30 - 09:55',
+    title: '✅ 课程：论文写作与学术规范·2班 (3B-101 刘冰)',
     type: '固定安排',
   },
   {
-    time: '14:00 - 17:00',
-    title: '自习：阅读工程伦理案例资料',
+    time: '09:55 - 12:00',
+    title: '✅ 课间休息 & 自习',
     type: '建议任务',
+  },
+  {
+    time: '12:00 - 14:00',
+    title: '🕐 午餐 & 午休（进行中）',
+    type: '固定安排',
+  },
+  {
+    time: '14:00 - 15:25',
+    title: '⏰ 即将开始：自然辩证法概论·9班 (3B-203 陈小满)',
+    type: '固定安排',
+  },
+  {
+    time: '15:30 - 16:55',
+    title: '课程：社会网络与计算·1班 (3C-202)',
+    type: '固定安排',
   },
   {
     time: '17:00 - 19:00',
@@ -64,30 +80,35 @@ export const studyTimelineEntries: TimelineEntry[] = [
     type: '固定安排',
   },
   {
-    time: '19:00 - 21:00',
-    title: '自习：整理论文写作课程笔记',
+    time: '19:00 - 21:30',
+    title: '自习：整理论文写作笔记 & 阅读专业文献',
     type: '建议任务',
   },
   {
-    time: '21:00 - 22:00',
-    title: '复盘：制定明日学习计划',
+    time: '21:30 - 22:30',
+    title: '复盘：检查今日任务完成情况',
     type: '建议任务',
   },
 ]
 
-// 今日（3月29日 星期日）真实学习任务
+// 今日（3月31日 星期二）真实学习任务 - 已更新状态
 export const studyTasks: TaskData[] = [
-  { title: '预习明天英语写作课程内容', deadline: '今天 11:00', priority: '高' },
-  { title: '阅读工程伦理案例资料', deadline: '今天 16:00', priority: '高' },
-  { title: '整理论文写作课程预习笔记', deadline: '今天 20:00', priority: '中' },
-  { title: '准备明天上课所需材料', deadline: '今天 21:00', priority: '中' },
-  { title: '检查课表确认明天教室位置', deadline: '今天 22:00', priority: '低' },
+  { title: '完成论文写作课程笔记整理', deadline: '今天 18:00', priority: '高' },
+  { title: '预习明天英语写作课程内容', deadline: '今天 20:00', priority: '高' },
+  { title: '阅读社会网络与计算相关论文', deadline: '今天 21:00', priority: '中' },
+  { title: '检查明日课表确认教室位置', deadline: '今天 21:30', priority: '中' },
+  { title: '更新科研进度记录', deadline: '今天 22:00', priority: '低' },
 ]
 
 // 星期名称数组
 const weekDays = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日']
 
-export function StudyPanel() {
+export function StudyPanel({
+  onRefresh,
+  refreshing = false,
+  refreshMessage = '',
+  refreshError = '',
+}: PanelRefreshProps) {
   return (
     <div className="space-y-8">
       <section>
@@ -148,8 +169,26 @@ export function StudyPanel() {
       <section className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-900">今日学习时间线</h2>
-          <span className="text-sm text-slate-500">2026 年 3 月 29 日 星期日</span>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-slate-500">2026 年 3 月 31 日 星期二 13:24</span>
+            <button
+              type="button"
+              onClick={() => {
+                void onRefresh?.()
+              }}
+              disabled={refreshing}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {refreshing ? '刷新中...' : '刷新'}
+            </button>
+          </div>
         </div>
+        {refreshError ? (
+          <p className="text-sm text-red-600">{refreshError}</p>
+        ) : null}
+        {!refreshError && refreshMessage ? (
+          <p className="text-sm text-emerald-600">{refreshMessage}</p>
+        ) : null}
         <div className="space-y-3">
           {studyTimelineEntries.map((item) => (
             <TimelineItem key={`${item.time}-${item.title}`} {...item} />
@@ -160,7 +199,7 @@ export function StudyPanel() {
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-900">今日学习任务</h2>
-          <span className="text-sm text-slate-500">按优先级推进</span>
+          <span className="text-sm text-slate-500">按优先级推进 · 下午课程即将开始</span>
         </div>
         <div className="mt-4">
           {studyTasks.map((task) => (

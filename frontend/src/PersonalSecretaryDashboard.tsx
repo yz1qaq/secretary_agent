@@ -19,7 +19,7 @@ import {
   TodayPlanPanel,
   todayPlanWorkspaceCopy,
 } from './dashboard/regions/TodayPlanPanel'
-import { NavigationKey } from './dashboard/types'
+import { NavigationKey, RefreshPanelKey } from './dashboard/types'
 
 type MessageRole = 'assistant' | 'user'
 
@@ -140,6 +140,13 @@ interface StreamChunk {
   error?: string
 }
 
+interface PanelRefreshResponse {
+  status?: string
+  panel?: RefreshPanelKey
+  message?: string
+  thread_id?: string
+}
+
 const defaultAssistantMessages: ChatMessage[] = [
   {
     id: 'assistant-welcome',
@@ -169,6 +176,17 @@ function formatClock(date: Date): string {
 
 function formatThreadTitle(thread: ChatThread): string {
   return thread.isDraft ? `${thread.title}（未保存）` : thread.title
+}
+
+function summarizePanelRefreshMessage(message: string, panel: RefreshPanelKey): string {
+  const clean = message.trim()
+  if (!clean) {
+    return `${panel === 'study' ? '学习' : '生活'}界面已触发静默刷新。`
+  }
+  if (clean.length <= 48) {
+    return clean
+  }
+  return `${clean.slice(0, 48)}...`
 }
 
 function isImageType(type: string): boolean {
@@ -586,6 +604,12 @@ export default function PersonalSecretaryDashboard() {
   const [chatLoading, setChatLoading] = useState(true)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [sending, setSending] = useState(false)
+  const [panelRefreshState, setPanelRefreshState] = useState<
+    Record<RefreshPanelKey, { refreshing: boolean; message: string; error: string }>
+  >({
+    study: { refreshing: false, message: '', error: '' },
+    life: { refreshing: false, message: '', error: '' },
+  })
   const messageBottomRef = useRef<HTMLDivElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const pendingAttachmentsRef = useRef<PendingAttachment[]>(pendingAttachments)
@@ -997,17 +1021,76 @@ export default function PersonalSecretaryDashboard() {
     }
   }
 
+  async function handlePanelRefresh(panel: RefreshPanelKey) {
+    setPanelRefreshState((current) => ({
+      ...current,
+      [panel]: {
+        refreshing: true,
+        message: '',
+        error: '',
+      },
+    }))
+
+    try {
+      const response = await requestJson<PanelRefreshResponse>(
+        buildApiUrl('/api/panel-refresh'),
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ panel }),
+        },
+      )
+
+      setPanelRefreshState((current) => ({
+        ...current,
+        [panel]: {
+          refreshing: false,
+          message: summarizePanelRefreshMessage(response.message || '', panel),
+          error: '',
+        },
+      }))
+    } catch (error) {
+      setPanelRefreshState((current) => ({
+        ...current,
+        [panel]: {
+          refreshing: false,
+          message: '',
+          error:
+            error instanceof Error
+              ? error.message
+              : `${panel === 'study' ? '学习' : '生活'}界面刷新失败，请稍后重试。`,
+        },
+      }))
+    }
+  }
+
   function renderMainContent(): ReactNode {
     if (activeNav === 'dashboard') {
       return <TodayPlanPanel />
     }
 
     if (activeNav === 'today') {
-      return <StudyPanel />
+      return (
+        <StudyPanel
+          onRefresh={() => handlePanelRefresh('study')}
+          refreshing={panelRefreshState.study.refreshing}
+          refreshMessage={panelRefreshState.study.message}
+          refreshError={panelRefreshState.study.error}
+        />
+      )
     }
 
     if (activeNav === 'tasks') {
-      return <LifePanel />
+      return (
+        <LifePanel
+          onRefresh={() => handlePanelRefresh('life')}
+          refreshing={panelRefreshState.life.refreshing}
+          refreshMessage={panelRefreshState.life.message}
+          refreshError={panelRefreshState.life.error}
+        />
+      )
     }
 
     return null

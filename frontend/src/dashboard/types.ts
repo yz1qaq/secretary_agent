@@ -1,4 +1,5 @@
 export type NavigationKey = 'dashboard' | 'today' | 'tasks'
+export type RefreshPanelKey = 'study' | 'life'
 
 export type PriorityLevel = '高' | '中' | '低'
 
@@ -30,3 +31,9 @@ export interface TaskData {
   priority: PriorityLevel
 }
 
+export interface PanelRefreshProps {
+  onRefresh?: () => void | Promise<void>
+  refreshing?: boolean
+  refreshMessage?: string
+  refreshError?: string
+}
