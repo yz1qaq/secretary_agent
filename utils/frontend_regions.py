@@ -26,7 +26,7 @@ FRONTEND_REGION_REGISTRY = [
         / "dashboard"
         / "regions"
         / "TodayPlanPanel.tsx",
-        "description": "控制今日计划页面的汇总卡片、执行清单和建议内容。",
+        "description": "控制今日计划页面的聚合视图。这里只展示今天的学习计划和生活计划，不维护明日或长期内容。",
         "allowed_exports": ["todayPlanWorkspaceCopy", "TodayPlanPanel"],
     },
     {
@@ -38,12 +38,13 @@ FRONTEND_REGION_REGISTRY = [
         / "dashboard"
         / "regions"
         / "StudyPanel.tsx",
-        "description": "控制学习区域的卡片、时间线和学习任务。",
+        "description": "控制学习区域。该区域包含今日学习计划、明日学习计划、长期学习计划三个抽屉，以及学习概览卡片和页面文案。",
         "allowed_exports": [
             "studyWorkspaceCopy",
-            "studyStatCards",
-            "studyTimelineEntries",
-            "studyTasks",
+            "studyOverviewStats",
+            "studyTodayPlan",
+            "studyTomorrowPlan",
+            "studyLongTermPlan",
             "StudyPanel",
         ],
     },
@@ -56,12 +57,13 @@ FRONTEND_REGION_REGISTRY = [
         / "dashboard"
         / "regions"
         / "LifePanel.tsx",
-        "description": "控制生活区域的卡片、健身计划和生活提醒。",
+        "description": "控制生活区域。该区域包含今日生活计划、明日生活计划、长期生活计划三个抽屉，以及生活概览卡片和页面文案。",
         "allowed_exports": [
             "lifeWorkspaceCopy",
-            "lifeStatCards",
-            "lifeTimelineEntries",
-            "lifeTasks",
+            "lifeOverviewStats",
+            "lifeTodayPlan",
+            "lifeTomorrowPlan",
+            "lifeLongTermPlan",
             "LifePanel",
         ],
     },
@@ -88,4 +90,3 @@ def get_frontend_region(region_id: str) -> dict:
     if region is None:
         raise ValueError(f"未知的前端区域: {region_id}")
     return region
-

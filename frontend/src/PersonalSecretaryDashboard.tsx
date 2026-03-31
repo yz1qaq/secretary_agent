@@ -19,7 +19,7 @@ import {
   TodayPlanPanel,
   todayPlanWorkspaceCopy,
 } from './dashboard/regions/TodayPlanPanel'
-import { NavigationKey, RefreshPanelKey } from './dashboard/types'
+import { NavigationKey, RefreshPanelKey, WorkspaceCopy } from './dashboard/types'
 
 type MessageRole = 'assistant' | 'user'
 
@@ -523,10 +523,10 @@ function MessageBubble({
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div className={`max-w-[85%] ${isUser ? 'items-end' : 'items-start'} flex flex-col gap-2`}>
         <div
-          className={`rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm ${
+          className={`rounded-[24px] px-4 py-3 text-sm leading-6 shadow-[0_10px_24px_rgba(15,23,42,0.05)] ${
             isUser
-              ? 'bg-indigo-600 text-white'
-              : 'border border-slate-200 bg-white text-slate-700'
+              ? 'bg-slate-900 text-white'
+              : 'border border-white/80 bg-white/92 text-slate-700'
           }`}
         >
           <p className="whitespace-pre-wrap">
@@ -539,7 +539,7 @@ function MessageBubble({
             {message.attachments.map((attachment) => (
               <div
                 key={`${message.id}-${attachment.name}`}
-                className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+                className="rounded-[22px] border border-white/80 bg-white/92 p-3 shadow-[0_10px_24px_rgba(15,23,42,0.05)]"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -576,10 +576,7 @@ function MessageBubble({
   )
 }
 
-function getWorkspaceCopy(activeNav: NavigationKey): {
-  title: string
-  subtitle: string
-} {
+function getWorkspaceCopy(activeNav: NavigationKey): WorkspaceCopy {
   if (activeNav === 'today') {
     return studyWorkspaceCopy
   }
@@ -1103,28 +1100,33 @@ export default function PersonalSecretaryDashboard() {
   const workspaceCopy = getWorkspaceCopy(activeNav)
 
   return (
-    <div className="h-screen bg-slate-50 text-slate-900">
-      <div className="flex h-full min-w-[1440px]">
+    <div className="h-screen bg-[#f4f4ef] text-slate-900">
+      <div className="flex h-full min-w-[1440px] bg-[radial-gradient(circle_at_top_left,rgba(191,219,254,0.24),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(167,243,208,0.18),transparent_28%)]">
         <SidebarNav
           activeKey={activeNav}
           items={sidebarNavItems}
           onChange={setActiveNav}
         />
 
-        <main className="min-w-0 flex-1 overflow-y-auto bg-slate-50 px-8 py-8">
+        <main className="min-w-0 flex-1 overflow-y-auto bg-transparent px-10 py-8">
           <div className="mx-auto max-w-6xl">
-            <div className="mb-8 flex items-start justify-between gap-6">
+            <div className="mb-8 flex items-start justify-between gap-6 rounded-[32px] border border-white/70 bg-white/78 px-7 py-6 shadow-[0_18px_40px_rgba(15,23,42,0.06)] backdrop-blur">
               <div>
-                <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
+                {workspaceCopy.eyebrow ? (
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+                    {workspaceCopy.eyebrow}
+                  </p>
+                ) : null}
+                <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900">
                   {workspaceCopy.title}
                 </h1>
-                <p className="mt-2 text-base text-slate-500">
+                <p className="mt-2 max-w-2xl text-base leading-7 text-slate-500">
                   {workspaceCopy.subtitle}
                 </p>
               </div>
               <button
                 type="button"
-                className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+                className="rounded-full border border-white/80 bg-slate-900 px-5 py-3 text-sm font-medium text-white shadow-[0_12px_28px_rgba(15,23,42,0.15)] transition hover:bg-slate-800"
               >
                 重新规划
               </button>
@@ -1134,16 +1136,19 @@ export default function PersonalSecretaryDashboard() {
           </div>
         </main>
 
-        <aside className="w-[500px] shrink-0 border-l border-slate-200 bg-white px-6 py-8">
-          <div className="h-[760px] rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <aside className="w-[500px] shrink-0 border-l border-white/70 bg-[#f7f8fb] px-6 py-8">
+          <div className="h-[760px] rounded-[30px] border border-white/80 bg-white/82 p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)] backdrop-blur">
             <div className="flex h-full flex-col">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-slate-900">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
                     和 AI 秘书对话
                   </p>
+                  <p className="mt-2 text-sm text-slate-500">
+                    这里保留多会话与流式回复，但视觉会和左侧计划板保持同一套秩序。
+                  </p>
                   <select
-                    className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                    className="mt-4 w-full rounded-[22px] border border-slate-200/90 bg-white/90 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
                     value={activeThread.threadId}
                     onChange={(event) => {
                       void handleThreadChange(event.target.value)
@@ -1164,13 +1169,13 @@ export default function PersonalSecretaryDashboard() {
                     void handleNewThread()
                   }}
                   disabled={sending}
-                  className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.05)] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   新建对话
                 </button>
               </div>
 
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="mt-4 rounded-[24px] border border-white/80 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(241,245,249,0.92))] p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
                 <p className="text-sm font-medium text-slate-900">
                   {formatThreadTitle(activeThread)}
                 </p>
@@ -1181,10 +1186,10 @@ export default function PersonalSecretaryDashboard() {
                 </p>
               </div>
 
-              <div className="mt-4 min-h-0 flex-1 overflow-hidden rounded-2xl bg-slate-50 p-4">
+              <div className="mt-4 min-h-0 flex-1 overflow-hidden rounded-[26px] bg-[#f3f5f8] p-4">
                 <div className="h-full overflow-y-auto pr-1">
                   {historyLoading ? (
-                    <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-500">
+                    <div className="rounded-[24px] border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-500">
                       正在加载聊天记录...
                     </div>
                   ) : (
@@ -1203,7 +1208,7 @@ export default function PersonalSecretaryDashboard() {
               ) : null}
 
               {pendingAttachments.length > 0 ? (
-                <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="mt-4 rounded-[24px] border border-white/80 bg-white/90 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
                   <div className="flex items-center justify-between gap-4">
                     <p className="text-sm font-medium text-slate-900">
                       待发送图片（最多 3 张）
@@ -1221,7 +1226,7 @@ export default function PersonalSecretaryDashboard() {
                     {pendingAttachments.map((attachment) => (
                       <div
                         key={attachment.id}
-                        className="rounded-2xl border border-slate-200 bg-slate-50 p-3"
+                        className="rounded-[22px] border border-slate-200/80 bg-slate-50/90 p-3"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
@@ -1261,12 +1266,12 @@ export default function PersonalSecretaryDashboard() {
               ) : null}
 
               <div className="mt-4">
-                <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                <div className="rounded-[26px] border border-white/80 bg-white/92 p-3 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
                   <div className="flex items-end gap-3">
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                      className="rounded-[20px] border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
                     >
                       附件
                     </button>
@@ -1284,7 +1289,7 @@ export default function PersonalSecretaryDashboard() {
                       value={draftMessage}
                       onChange={(event) => setDraftMessage(event.target.value)}
                       placeholder="问问你的秘书..."
-                      className="min-h-[84px] flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                      className="min-h-[84px] flex-1 resize-none rounded-[22px] border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm leading-6 text-slate-700 outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
                     />
 
                     <button
@@ -1293,7 +1298,7 @@ export default function PersonalSecretaryDashboard() {
                         void handleSendMessage()
                       }}
                       disabled={sending || (!draftMessage.trim() && pendingAttachments.length === 0)}
-                      className="rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                      className="rounded-[20px] bg-slate-900 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                     >
                       {sending ? '发送中...' : '发送'}
                     </button>

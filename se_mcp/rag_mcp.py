@@ -22,7 +22,7 @@ from utils.logger import get_project_logger
 acess_key = os.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID")
 acess_key_secret = os.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET")
 workspace_id = os.getenv("WORKSPACE_ID")
-rag_id = "0v4nc7kund"
+rag_id = "o0mbnxv9x0"
 
 
 mcp = FastMCP()

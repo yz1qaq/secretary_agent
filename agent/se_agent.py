@@ -46,13 +46,15 @@ SYSTEM_REFRESH_THREAD_IDS = {
 }
 PANEL_REFRESH_PROMPTS = {
     "study": (
-        "查询今日信息，并且使用前端工具更新前端界面中的 study-panel 区域。"
-        "你必须先读取当前前端区域，再修改学习界面内容，并执行前端构建校验。"
+        "查询今日与近期学习信息，并且使用前端工具更新前端界面中的 study-panel 区域。"
+        "你必须先读取当前前端区域，再修改学习界面中的今日学习计划、明日学习计划、长期学习计划三层结构，以及学习概览卡片。"
+        "保持 today 导出内容可供 today-plan-panel 聚合使用，并执行前端构建校验。"
         "不要修改其他区域。"
     ),
     "life": (
-        "查询今日生活信息，并且使用前端工具更新前端界面中的 life-panel 区域。"
-        "你必须先读取当前前端区域，再修改生活界面内容，并执行前端构建校验。"
+        "查询今日与近期生活信息，并且使用前端工具更新前端界面中的 life-panel 区域。"
+        "你必须先读取当前前端区域，再修改生活界面中的今日生活计划、明日生活计划、长期生活计划三层结构，以及生活概览卡片。"
+        "保持 today 导出内容可供 today-plan-panel 聚合使用，并执行前端构建校验。"
         "不要修改其他区域。"
     ),
 }
@@ -216,44 +218,6 @@ def build_memory_record_input(
     return attachment_note
 
 
-def format_attachment_note(attachment: dict[str, Any]) -> str:
-    name = str(attachment.get("name") or "未命名附件")
-    mime_type = str(attachment.get("type") or "application/octet-stream")
-    if mime_type.startswith("image/"):
-        return f"[历史图片附件：{name}]"
-
-    text_summary = str(attachment.get("textSummary") or attachment.get("text_summary") or "").strip()
-    if text_summary:
-        return f"[历史附件：{name} 摘要：{summarize_message(text_summary, 80)}]"
-    return f"[历史附件：{name}]"
-
-
-def format_thread_history_content(message: dict[str, Any]) -> str:
-    base_content = str(message.get("content") or "").strip()
-    attachments = message.get("attachments") or []
-    attachment_notes = [
-        format_attachment_note(attachment)
-        for attachment in attachments
-        if isinstance(attachment, dict)
-    ]
-    if attachment_notes:
-        if base_content:
-            return f"{base_content}\n" + "\n".join(attachment_notes)
-        return "\n".join(attachment_notes)
-    return base_content
-
-
-def build_thread_history_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    prompt_messages: list[dict[str, Any]] = []
-    for message in messages:
-        role = "user" if str(message.get("role")) == "user" else "assistant"
-        content = format_thread_history_content(message)
-        if not content:
-            continue
-        prompt_messages.append({"role": role, "content": content})
-    return prompt_messages
-
-
 def summarize_memory_results(results: dict[str, object]) -> str:
     summary_parts: list[str] = []
     for key in (
@@ -375,19 +339,17 @@ class SecretaryAgentService:
         if self.agent is None or self.memory_service is None:
             raise RuntimeError("agent 初始化失败")
 
-        recent_messages = await thread_store.get_recent_messages(thread_id, limit=6)
-        thread_history_messages = build_thread_history_messages(recent_messages)
         memory_context, memory_results = await self.memory_service.build_prompt_context(
             thread_id=thread_id,
             query=memory_record_input,
         )
         runtime_agent = self.create_runtime_agent(time_context, memory_context)
-        input_messages = thread_history_messages + [{"role": "user", "content": user_content}]
+        input_messages = [{"role": "user", "content": user_content}]
 
         logger.info(
-            "chat prompt context prepared: thread_id=%s history_messages=%d memory=%s",
+            "chat prompt context prepared: thread_id=%s ui_history_in_prompt=%s memory=%s",
             thread_id,
-            len(thread_history_messages),
+            False,
             summarize_memory_results(memory_results),
         )
 
@@ -462,19 +424,17 @@ class SecretaryAgentService:
         if self.agent is None or self.memory_service is None:
             raise RuntimeError("agent 初始化失败")
 
-        recent_messages = await thread_store.get_recent_messages(thread_id, limit=6)
-        thread_history_messages = build_thread_history_messages(recent_messages)
         memory_context, memory_results = await self.memory_service.build_prompt_context(
             thread_id=thread_id,
             query=memory_record_input,
         )
         runtime_agent = self.create_runtime_agent(time_context, memory_context)
-        input_messages = thread_history_messages + [{"role": "user", "content": user_content}]
+        input_messages = [{"role": "user", "content": user_content}]
 
         logger.info(
-            "stream prompt context prepared: thread_id=%s history_messages=%d memory=%s",
+            "stream prompt context prepared: thread_id=%s ui_history_in_prompt=%s memory=%s",
             thread_id,
-            len(thread_history_messages),
+            False,
             summarize_memory_results(memory_results),
         )
 
