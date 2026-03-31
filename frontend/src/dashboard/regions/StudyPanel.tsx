@@ -12,7 +12,7 @@ export const studyStatCards: StatCardData[] = [
   { label: '本周课程', value: '8', hint: '周一至周五共 8 节课' },
   { label: '今日课程', value: '0', hint: '今天是星期日，无课程' },
   { label: '明日课程', value: '2', hint: '15:30 和 19:00 各有 1 节' },
-  { label: '学习任务', value: '4', hint: '按优先级完成' },
+  { label: '学习任务', value: '5', hint: '按优先级完成' },
 ]
 
 // 周课表数据：根据西华大学研究生 2025-2026 下期课表
@@ -41,46 +41,47 @@ export const weeklySchedule = {
   '星期日': [],
 }
 
-// 明日（3月30日 星期一）真实时间安排
+// 今日（3月29日 星期日）真实时间安排
 export const studyTimelineEntries: TimelineEntry[] = [
   {
-    time: '08:30 - 11:30',
-    title: '自习：预习论文写作与学术规范',
+    time: '09:00 - 11:30',
+    title: '自习：预习明天英语写作课程',
     type: '建议任务',
   },
   {
-    time: '14:00 - 15:00',
-    title: '自习：复习工程伦理课程资料',
-    type: '建议任务',
-  },
-  {
-    time: '15:30 - 16:55',
-    title: '课程：研究生英语写作与交流·22班',
+    time: '11:30 - 14:00',
+    title: '午餐 & 午休',
     type: '固定安排',
   },
   {
-    time: '17:00 - 18:30',
+    time: '14:00 - 17:00',
+    title: '自习：阅读工程伦理案例资料',
+    type: '建议任务',
+  },
+  {
+    time: '17:00 - 19:00',
     title: '晚餐 & 休息',
     type: '固定安排',
   },
   {
-    time: '19:00 - 21:10',
-    title: '课程：工程伦理·2班',
-    type: '固定安排',
+    time: '19:00 - 21:00',
+    title: '自习：整理论文写作课程笔记',
+    type: '建议任务',
   },
   {
-    time: '21:30 - 22:30',
-    title: '复盘：整理今日课程笔记',
+    time: '21:00 - 22:00',
+    title: '复盘：制定明日学习计划',
     type: '建议任务',
   },
 ]
 
-// 明日（3月30日 星期一）真实学习任务
+// 今日（3月29日 星期日）真实学习任务
 export const studyTasks: TaskData[] = [
-  { title: '准备英语写作课程材料', deadline: '明天 15:00', priority: '高' },
-  { title: '阅读工程伦理案例资料', deadline: '明天 18:30', priority: '高' },
-  { title: '完成论文写作课程预习', deadline: '明天 12:00', priority: '中' },
-  { title: '整理本周学习计划', deadline: '明天 22:30', priority: '中' },
+  { title: '预习明天英语写作课程内容', deadline: '今天 11:00', priority: '高' },
+  { title: '阅读工程伦理案例资料', deadline: '今天 16:00', priority: '高' },
+  { title: '整理论文写作课程预习笔记', deadline: '今天 20:00', priority: '中' },
+  { title: '准备明天上课所需材料', deadline: '今天 21:00', priority: '中' },
+  { title: '检查课表确认明天教室位置', deadline: '今天 22:00', priority: '低' },
 ]
 
 // 星期名称数组
@@ -146,8 +147,8 @@ export function StudyPanel() {
 
       <section className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-900">明日学习时间线</h2>
-          <span className="text-sm text-slate-500">2026 年 3 月 30 日 星期一</span>
+          <h2 className="text-lg font-semibold text-slate-900">今日学习时间线</h2>
+          <span className="text-sm text-slate-500">2026 年 3 月 29 日 星期日</span>
         </div>
         <div className="space-y-3">
           {studyTimelineEntries.map((item) => (
@@ -158,7 +159,7 @@ export function StudyPanel() {
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-900">明日学习任务</h2>
+          <h2 className="text-lg font-semibold text-slate-900">今日学习任务</h2>
           <span className="text-sm text-slate-500">按优先级推进</span>
         </div>
         <div className="mt-4">
