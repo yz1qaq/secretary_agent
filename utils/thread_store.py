@@ -32,6 +32,7 @@ class ThreadStore:
         self._lock = asyncio.Lock()
 
     def _read_store_unlocked(self) -> dict[str, list[dict[str, Any]]]:
+        """读取本地线程存储；遇到空文件或非法结构时回退到安全默认值。"""
         if not self.file_path.exists():
             return _default_store()
 
@@ -56,6 +57,7 @@ class ThreadStore:
         self,
         attachments: list[dict[str, Any]] | None,
     ) -> list[dict[str, Any]]:
+        """把前端上传和后端记录里形态不完全一致的附件统一成可持久化结构。"""
         normalized: list[dict[str, Any]] = []
         for attachment in attachments or []:
             content = str(attachment.get("content") or "")
@@ -79,6 +81,7 @@ class ThreadStore:
         is_draft: bool = True,
         is_hidden: bool = False,
     ) -> dict[str, Any]:
+        """统一线程初始结构，避免不同入口创建出来的 thread 形态不一致。"""
         timestamp = _now_iso()
         return {
             "thread_id": thread_id,
@@ -96,6 +99,7 @@ class ThreadStore:
         existing_threads: list[dict[str, Any]],
         requested_thread_id: str | None = None,
     ) -> str:
+        """优先接受前端指定的 thread_id，但要在本地文件层再做一次唯一性兜底。"""
         existing_ids = {
             str(thread.get("thread_id"))
             for thread in existing_threads
@@ -111,6 +115,7 @@ class ThreadStore:
         return generated
 
     async def list_threads(self) -> list[dict[str, Any]]:
+        """只返回前端需要展示的简化线程列表，并过滤掉系统隐藏线程。"""
         async with self._lock:
             payload = self._read_store_unlocked()
             threads = sorted(
@@ -169,6 +174,7 @@ class ThreadStore:
         is_draft: bool = True,
         is_hidden: bool = False,
     ) -> dict[str, Any]:
+        """静默刷新等系统任务会复用固定 thread_id，这里负责“有则更新、无则创建”。"""
         async with self._lock:
             payload = self._read_store_unlocked()
             for thread in payload["threads"]:
@@ -271,6 +277,7 @@ class ThreadStore:
         user_attachments: list[dict[str, Any]] | None = None,
         assistant_attachments: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
+        """把一轮用户/助手消息按 UI 需要的结构完整落盘，但不参与 MemoryOS 的记忆策略。"""
         async with self._lock:
             payload = self._read_store_unlocked()
             thread = next(

@@ -119,6 +119,7 @@ class LongTermProfileUpdateRequest(BaseModel):
 
 
 def creat_se_agent(llm, tools, debug: bool, system_prompt: str, checkpointer=None):
+    """统一封装 agent 创建逻辑，避免启动期和请求期各自散落一份配置。"""
     agent_kwargs = dict(
         model=llm,
         tools=tools,
@@ -132,6 +133,7 @@ def creat_se_agent(llm, tools, debug: bool, system_prompt: str, checkpointer=Non
 
 
 def extract_message_text(content: Any) -> str:
+    """兼容 LangChain 返回的多种 message content 结构，尽量提取出可读文本。"""
     if isinstance(content, str):
         return content
 
@@ -161,6 +163,7 @@ def split_text_for_stream(reply: str, chunk_size: int = 2) -> list[str]:
 
 
 def build_user_content(message: str, attachments: list[ChatAttachmentPayload]) -> str | list[dict[str, Any]]:
+    """把前端传来的文本和图片附件整理成模型可消费的单模态/多模态 content。"""
     if len(attachments) > 3:
         raise ValueError("最多只能同时上传 3 张图片")
 
@@ -193,6 +196,27 @@ def build_user_content(message: str, attachments: list[ChatAttachmentPayload]) -
     return content_blocks
 
 
+def build_model_input_messages(
+    *,
+    time_context: str,
+    user_content: str | list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """在真正发给模型的消息体里嵌入时间上下文，给时间工具失败时再加一层兜底。"""
+    if isinstance(user_content, str):
+        content = (
+            f"【当前时间上下文】\n{time_context}\n\n"
+            f"【用户消息】\n{user_content.strip()}"
+        ).strip()
+        return [{"role": "user", "content": content}]
+
+    time_block = {
+        "type": "text",
+        "text": f"【当前时间上下文】\n{time_context}",
+    }
+    content_blocks = [time_block, *user_content]
+    return [{"role": "user", "content": content_blocks}]
+
+
 def summarize_message(message: str, max_length: int = 120) -> str:
     text = " ".join(message.strip().split())
     if len(text) <= max_length:
@@ -215,6 +239,7 @@ def build_memory_record_input(
     message: str,
     attachments: list[ChatAttachmentPayload],
 ) -> str:
+    """把一次问答压成记忆侧可读文本，避免短中期记忆丢掉“用户上传过图片”这类关键信号。"""
     text = message.strip()
     if not attachments:
         return text
@@ -255,6 +280,7 @@ class SecretaryAgentService:
         self.current_model_config = None
 
     def _build_llm(self, *, base_url: str, api_key: str, model_name: str):
+        """把配置校验和 llm 实例化收口到一起，便于启动和热更新共用一套入口。"""
         config = creat_config(
             api_key=api_key.strip(),
             base_url=base_url.strip(),
@@ -265,6 +291,7 @@ class SecretaryAgentService:
         return llm, config
 
     def _build_base_agent(self):
+        """构造不带运行时上下文的基础 agent，主要用于服务启动后的默认可用状态。"""
         if self.llm is None:
             raise RuntimeError("llm 未初始化")
         system_prompt = creat_system_prompt(agent_name=self.agent_name)
@@ -276,6 +303,7 @@ class SecretaryAgentService:
         )
 
     def get_model_settings_payload(self) -> dict[str, object]:
+        """把模型配置转成适合前端展示的结构，并统一处理 api_key 掩码。"""
         config = self.current_model_config or self.model_config_store.load_or_initialize()
         return {
             "base_url": config.base_url,
@@ -285,6 +313,7 @@ class SecretaryAgentService:
         }
 
     async def startup(self) -> None:
+        """启动时只做一次重资源初始化：工具、llm、MemoryOS 和基础 agent。"""
         async with self._startup_lock:
             if self.agent is not None:
                 return
@@ -339,6 +368,7 @@ class SecretaryAgentService:
         api_key: str,
         model_name: str,
     ) -> dict[str, object]:
+        """热切换模型配置时原子替换 llm，保证旧请求不被打断，新请求立刻生效。"""
         await self.startup()
 
         current_config = self.current_model_config or self.model_config_store.load_or_initialize()
@@ -369,6 +399,7 @@ class SecretaryAgentService:
         }
 
     async def get_settings_snapshot(self) -> dict[str, object]:
+        """聚合设置页需要的模型配置和 MemoryOS 快照，避免前端拆成多次请求。"""
         await self.startup()
         if self.memory_service is None:
             raise RuntimeError("memory service 未初始化")
@@ -389,6 +420,7 @@ class SecretaryAgentService:
         user_manual_profile: dict[str, str],
         assistant_manual_profile: dict[str, str],
     ) -> dict[str, object]:
+        """统一更新长期记忆里的手动画像，用户画像和秘书画像走同一条保存链路。"""
         await self.startup()
         if self.memory_service is None:
             raise RuntimeError("memory service 未初始化")
@@ -404,6 +436,7 @@ class SecretaryAgentService:
         }
 
     def create_runtime_agent(self, time_context: str, memory_context: str):
+        """每次请求都重新拼运行时 prompt，把当前时间和记忆上下文动态注入进去。"""
         if self.llm is None:
             raise RuntimeError("agent 运行时依赖未初始化")
 
@@ -427,6 +460,7 @@ class SecretaryAgentService:
         *,
         store_in_memory: bool = True,
     ) -> str:
+        """非流式对话主链路：准备时间/记忆/多模态输入，调用 agent，再分别落线程记录和 MemoryOS。"""
         attachments = attachments or []
         user_content = build_user_content(message, attachments)
         memory_record_input = build_memory_record_input(message, attachments)
@@ -450,13 +484,18 @@ class SecretaryAgentService:
             thread_id=thread_id,
             query=memory_record_input,
         )
+        # 线程历史只保留给前端恢复；真正喂给模型的是 MemoryOS 检索结果和当前这轮输入。
         runtime_agent = self.create_runtime_agent(time_context, memory_context)
-        input_messages = [{"role": "user", "content": user_content}]
+        input_messages = build_model_input_messages(
+            time_context=time_context,
+            user_content=user_content,
+        )
 
         logger.info(
-            "chat prompt context prepared: thread_id=%s ui_history_in_prompt=%s memory=%s",
+            "chat prompt context prepared: thread_id=%s ui_history_in_prompt=%s embedded_time_context=%s memory=%s",
             thread_id,
             False,
+            True,
             summarize_memory_results(memory_results),
         )
 
@@ -484,6 +523,7 @@ class SecretaryAgentService:
             assistant_content=reply,
             user_attachments=[attachment.model_dump() for attachment in attachments],
         )
+        # 静默刷新等系统任务可以只写线程记录，不进入长期记忆，避免污染用户画像。
         if store_in_memory:
             await self.memory_service.add_memory(
                 user_input=memory_record_input,
@@ -512,6 +552,7 @@ class SecretaryAgentService:
         *,
         store_in_memory: bool = True,
     ) -> AsyncIterator[dict[str, str]]:
+        """流式对话链路和 ask 基本一致，只是在最终回复拿到后再模拟分块输出给前端。"""
         attachments = attachments or []
         user_content = build_user_content(message, attachments)
         memory_record_input = build_memory_record_input(message, attachments)
@@ -535,13 +576,18 @@ class SecretaryAgentService:
             thread_id=thread_id,
             query=memory_record_input,
         )
+        # 当前 provider 不直接产出 token 级流，所以这里先完整拿到结果，再切片成前端可消费的流。
         runtime_agent = self.create_runtime_agent(time_context, memory_context)
-        input_messages = [{"role": "user", "content": user_content}]
+        input_messages = build_model_input_messages(
+            time_context=time_context,
+            user_content=user_content,
+        )
 
         logger.info(
-            "stream prompt context prepared: thread_id=%s ui_history_in_prompt=%s memory=%s",
+            "stream prompt context prepared: thread_id=%s ui_history_in_prompt=%s embedded_time_context=%s memory=%s",
             thread_id,
             False,
+            True,
             summarize_memory_results(memory_results),
         )
 

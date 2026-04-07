@@ -77,6 +77,7 @@ class MemoryOSService:
         timestamp: str | None = None,
         meta_data: dict[str, Any] | None = None,
     ) -> None:
+        """每轮问答先进入短期记忆，再在阈值满足时逐步上卷到中期和长期。"""
         qa_pair = {
             "id": str(uuid.uuid4()),
             "thread_id": thread_id,
@@ -101,6 +102,7 @@ class MemoryOSService:
         query: str,
         thread_id: str | None = None,
     ) -> dict[str, object]:
+        """检索时如果发现有高热但未分析的片段，会先补做分析再返回最新结果。"""
         async with self._lock:
             result = self.retriever.retrieve_context(
                 user_query=query,
@@ -150,6 +152,7 @@ class MemoryOSService:
         user_manual_profile: dict[str, Any] | None = None,
         assistant_manual_profile: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        """设置页保存长期画像时统一走这里，保证用户和助手画像的更新语义一致。"""
         async with self._lock:
             if user_manual_profile is not None:
                 self.user_long_term_memory.update_manual_profile(user_manual_profile)
@@ -162,6 +165,7 @@ class MemoryOSService:
             }
 
     async def get_memory_center_snapshot(self) -> dict[str, Any]:
+        """给设置页提供一份完整的短期/中期/长期记忆快照。"""
         async with self._lock:
             return {
                 "short_term": self.short_term_memory.get_all(),
@@ -178,6 +182,7 @@ class MemoryOSService:
         thread_id: str,
         query: str,
     ) -> tuple[str, dict[str, object]]:
+        """把结构化记忆整理成 prompt 片段，只注入和当前 query 相关的部分。"""
         retrieved = await self.retrieve_memory(query=query, thread_id=thread_id)
 
         parts: list[str] = []

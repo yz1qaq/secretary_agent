@@ -26,6 +26,7 @@ class Retriever:
         user_id: str,
         thread_id: str | None = None,
     ) -> dict[str, object]:
+        """把短中长期检索统一收口成一份上下文包，便于上层直接拼 prompt。"""
         return {
             "user_id": user_id,
             "thread_id": thread_id or "",

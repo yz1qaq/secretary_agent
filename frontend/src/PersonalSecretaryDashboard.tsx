@@ -339,6 +339,7 @@ function normalizeThreadsResponse(payload: ChatThreadsResponse): ChatThread[] {
 }
 
 async function createServerThread(requestedThreadId?: string): Promise<ChatThread> {
+  // 前端即使自己先生成了 thread_id，也还是交给后端再做一次唯一性确认。
   const payload = await requestJson<ThreadListItemResponse>(buildApiUrl('/api/chat/threads'), {
     method: 'POST',
     headers: {
@@ -435,6 +436,7 @@ async function requestStreamChat(
   payload: ChatSendPayload,
   onPartialReply?: (content: string) => void,
 ): Promise<ChatSendResponse> {
+  // 这里优先消费 SSE；如果后端只是“完整回复后再切片返回”，前端也仍能统一走这一套解析逻辑。
   const streamPath = USE_MODERN_CHAT_API ? '/api/chat/stream' : '/stream'
   const response = await fetch(buildApiUrl(streamPath), {
     method: 'POST',
@@ -476,6 +478,7 @@ async function requestStreamChat(
       }
 
       if (payloadChunk.delta) {
+        // 每拿到一段增量都立即回写到占位消息里，保证聊天框能持续增长而不是最后一口气显示。
         accumulated += payloadChunk.delta
         onPartialReply?.(accumulated)
         await waitForStreamPaint()
@@ -530,6 +533,7 @@ async function sendChatPayload(
   payload: ChatSendPayload,
   onPartialReply?: (content: string) => void,
 ): Promise<ChatSendResponse> {
+  // 新接口优先走流式；如果浏览器或后端当前不支持，再自动回退到非流式接口。
   if (USE_MODERN_CHAT_API) {
     try {
       return await requestStreamChat(payload, onPartialReply)
@@ -659,6 +663,7 @@ export default function PersonalSecretaryDashboard() {
   const [chatLoading, setChatLoading] = useState(true)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [sending, setSending] = useState(false)
+  const [deletingThread, setDeletingThread] = useState(false)
   const [panelRefreshState, setPanelRefreshState] = useState<
     Record<RefreshPanelKey, { refreshing: boolean; message: string; error: string }>
   >({
@@ -712,6 +717,7 @@ export default function PersonalSecretaryDashboard() {
   }, [threads])
 
   const syncSettingsForms = useCallback((payload: SettingsData) => {
+    // 设置页始终以服务端快照为准，前端表单只做“编辑中的镜像”，避免本地状态和真实 MemoryOS 脱节。
     setModelForm({
       baseUrl: payload.model.base_url || '',
       apiKey: '',
@@ -727,6 +733,7 @@ export default function PersonalSecretaryDashboard() {
 
   const loadSettings = useCallback(
     async (force = false): Promise<void> => {
+      // 设置页按需拉取，避免主工作台首次打开时就把所有记忆数据都请求一遍。
       if (!force && settingsLoading) {
         return
       }
@@ -752,6 +759,7 @@ export default function PersonalSecretaryDashboard() {
   )
 
   const loadThreadHistory = useCallback(async (threadId: string): Promise<void> => {
+    // 会话列表只先拿摘要；真正切到某个 thread 时再懒加载完整消息历史。
     if (!USE_MODERN_CHAT_API) {
       return
     }
@@ -799,6 +807,7 @@ export default function PersonalSecretaryDashboard() {
     let alive = true
 
     const bootstrapThreads = async () => {
+      // 启动时优先恢复后端持久化线程；如果拿不到，就退回本地草稿会话保证 UI 可用。
       setChatLoading(true)
       setChatError('')
 
@@ -859,6 +868,7 @@ export default function PersonalSecretaryDashboard() {
   }, [activeNav, loadSettings, settingsData, settingsLoading])
 
   useLayoutEffect(() => {
+    // 自动滚动依赖“最后一条消息内容长度”，这样流式输出时同一条消息增长也会触发滚动。
     const animationFrame = window.requestAnimationFrame(() => {
       messageBottomRef.current?.scrollIntoView({
         behavior: lastMessage?.isStreaming ? 'auto' : 'smooth',
@@ -881,6 +891,7 @@ export default function PersonalSecretaryDashboard() {
   }, [])
 
   async function refreshThreadList(preferredThreadId?: string): Promise<void> {
+    // 发送完成后刷新一次线程摘要，让标题、预览和草稿状态与后端最终落盘结果保持一致。
     if (!USE_MODERN_CHAT_API) {
       if (preferredThreadId) {
         setActiveThreadId(preferredThreadId)
@@ -970,6 +981,7 @@ export default function PersonalSecretaryDashboard() {
   }
 
   async function handleNewThread() {
+    // 新建线程时就先在后端占一个 thread_id，后续这条会话的消息和删除动作才能完全对齐。
     try {
       const draftThread = USE_MODERN_CHAT_API
         ? await createServerThread(crypto.randomUUID())
@@ -983,6 +995,71 @@ export default function PersonalSecretaryDashboard() {
       setChatError(
         error instanceof Error ? error.message : '创建新会话失败，请稍后重试。',
       )
+    }
+  }
+
+  async function handleDeleteThread() {
+    // 删除只影响前端线程文件，不动 MemoryOS；这样 UI 可清理，但用户长期记忆会继续保留。
+    if (!activeThread || deletingThread || sending) {
+      return
+    }
+
+    const confirmed = window.confirm(
+      `确认删除当前对话“${formatThreadTitle(activeThread)}”吗？这只会删除本地会话记录，不会删除 MemoryOS 中已经形成的记忆。`,
+    )
+    if (!confirmed) {
+      return
+    }
+
+    setDeletingThread(true)
+    setChatError('')
+
+    try {
+      if (USE_MODERN_CHAT_API) {
+        await fetch(buildApiUrl(`/api/chat/threads/${encodeURIComponent(activeThread.threadId)}`), {
+          method: 'DELETE',
+        }).then(async (response) => {
+          if (!response.ok) {
+            const text = await response.text()
+            throw new Error(text || '删除对话失败')
+          }
+        })
+      }
+
+      revokeAttachmentUrls(pendingAttachmentsRef.current)
+      activeThread.messages.forEach((message) => {
+        revokeAttachmentUrls(message.attachments)
+      })
+
+      const remainingThreads = threadsRef.current.filter(
+        (thread) => thread.threadId !== activeThread.threadId,
+      )
+
+      if (remainingThreads.length > 0) {
+        // 删除当前线程后优先切到剩余列表里的第一条，避免右侧聊天区出现悬空状态。
+        const nextActiveThread = remainingThreads[0]
+        setThreads(remainingThreads)
+        setActiveThreadId(nextActiveThread.threadId)
+        setDraftMessage('')
+        setPendingAttachments([])
+        if (!nextActiveThread.isDraft && nextActiveThread.messages.length === 0) {
+          await loadThreadHistory(nextActiveThread.threadId)
+        }
+      } else {
+        const nextThread = USE_MODERN_CHAT_API
+          ? await createServerThread(crypto.randomUUID())
+          : createDraftThread()
+        setThreads([nextThread])
+        setActiveThreadId(nextThread.threadId)
+        setDraftMessage('')
+        setPendingAttachments([])
+      }
+    } catch (error) {
+      setChatError(
+        error instanceof Error ? error.message : '删除对话失败，请稍后重试。',
+      )
+    } finally {
+      setDeletingThread(false)
     }
   }
 
@@ -1003,6 +1080,7 @@ export default function PersonalSecretaryDashboard() {
   }
 
   async function handleSendMessage() {
+    // 发送时先乐观插入“用户消息 + 助手占位消息”，流式内容回来后只更新占位那一条。
     if (!activeThread || sending) {
       return
     }
@@ -1120,6 +1198,7 @@ export default function PersonalSecretaryDashboard() {
 
       await refreshThreadList(response.thread_id || activeThread.threadId)
     } catch (error) {
+      // 如果发送失败，只移除助手占位，保留用户刚才输入的上下文反馈在错误提示里处理。
       setThreads((current) =>
         current.map((thread) =>
           thread.threadId === activeThread.threadId
@@ -1142,6 +1221,7 @@ export default function PersonalSecretaryDashboard() {
   }
 
   async function handlePanelRefresh(panel: RefreshPanelKey) {
+    // 学习/生活区的刷新属于静默后台任务：会触发 agent 改源码，但不进入右侧普通聊天记录。
     setPanelRefreshState((current) => ({
       ...current,
       [panel]: {
@@ -1215,6 +1295,7 @@ export default function PersonalSecretaryDashboard() {
   }
 
   async function handleSaveModel() {
+    // 模型配置保存后不需要重启前端或后端进程；新请求会直接走热切换后的 llm。
     setModelSaving(true)
     setSettingsError('')
     setModelSuccess('')
@@ -1249,6 +1330,7 @@ export default function PersonalSecretaryDashboard() {
   }
 
   async function handleSaveLongTerm() {
+    // 长期画像保存后再回拉一次服务端快照，确保页面展示的是 MemoryOS 真正合并后的结果。
     setLongTermSaving(true)
     setSettingsError('')
     setLongTermSuccess('')
@@ -1281,6 +1363,7 @@ export default function PersonalSecretaryDashboard() {
   }
 
   function renderMainContent(): ReactNode {
+    // 中间主工作区只负责切换功能面板，聊天区始终固定在右侧。
     if (activeNav === 'dashboard') {
       return <TodayPlanPanel />
     }
@@ -1405,7 +1488,7 @@ export default function PersonalSecretaryDashboard() {
                   onClick={() => {
                     void handleNewThread()
                   }}
-                  disabled={sending}
+                  disabled={sending || deletingThread}
                   className="rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.05)] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   新建对话
@@ -1413,14 +1496,28 @@ export default function PersonalSecretaryDashboard() {
               </div>
 
               <div className="mt-4 rounded-[24px] border border-white/80 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(241,245,249,0.92))] p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-                <p className="text-sm font-medium text-slate-900">
-                  {formatThreadTitle(activeThread)}
-                </p>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
-                  {activeThread.isDraft
-                    ? '当前为草稿会话，发送首条消息后会自动保存。'
-                    : activeThread.preview}
-                </p>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-900">
+                      {formatThreadTitle(activeThread)}
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-slate-500">
+                      {activeThread.isDraft
+                        ? '当前为草稿会话，发送首条消息后会自动保存。'
+                        : activeThread.preview}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleDeleteThread()
+                    }}
+                    disabled={deletingThread || sending || historyLoading || chatLoading}
+                    className="shrink-0 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {deletingThread ? '删除中...' : '删除对话'}
+                  </button>
+                </div>
               </div>
 
               <div className="mt-4 min-h-0 flex-1 overflow-hidden rounded-[26px] bg-[#f3f5f8] p-4">

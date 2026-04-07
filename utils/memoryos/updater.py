@@ -31,6 +31,7 @@ class Updater:
         return [token for token, _ in Counter(tokens).most_common(limit)]
 
     def process_short_term_to_mid_term(self) -> dict[str, object] | None:
+        """短期记忆满了以后，把一批原始问答压成一个可检索的中期片段。"""
         qa_pairs = self.short_term_memory.consume_all()
         if not qa_pairs:
             return None
@@ -71,6 +72,7 @@ class Updater:
         return self.mid_term_memory.get_hot_unanalyzed_segments(self.heat_threshold)
 
     def analyze_segment(self, segment: dict[str, object]) -> None:
+        """把高热中期片段拆出长期 knowledge，并同步重建用户/助手自动画像。"""
         details = segment.get("details") or []
         if not isinstance(details, list):
             details = []

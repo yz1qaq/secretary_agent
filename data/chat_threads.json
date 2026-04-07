@@ -414,54 +414,6 @@
       ]
     },
     {
-      "thread_id": "log-check-thread",
-      "title": "测试日志",
-      "preview": "您好！我是您的秘书moss。收到您的测试日志消息了。\n\n",
-      "is_draft": false,
-      "created_at": "2026-03-29T22:19:59",
-      "updated_at": "2026-03-29T22:19:59",
-      "messages": [
-        {
-          "id": "df51e401-dea6-4682-ba31-8a4bd3f011b4",
-          "role": "user",
-          "content": "测试日志",
-          "created_at": "22:19",
-          "attachments": []
-        },
-        {
-          "id": "62eef92f-94ee-44f5-ba76-ef1479796289",
-          "role": "assistant",
-          "content": "您好！我是您的秘书moss。收到您的测试日志消息了。\n\n请问有什么我可以帮助您的吗？我可以协助您：\n- 运行命令行工具\n- 管理终端窗口\n- 检索知识库信息\n- 管理前端区域代码\n\n请随时告诉我您的需求！",
-          "created_at": "22:19",
-          "attachments": []
-        }
-      ]
-    },
-    {
-      "thread_id": "local-log-thread",
-      "title": "测试日志记录",
-      "preview": "日志记录功能测试成功！\n\n**测试结果摘要：**\n\n1.",
-      "is_draft": false,
-      "created_at": "2026-03-29T22:20:41",
-      "updated_at": "2026-03-29T22:20:41",
-      "messages": [
-        {
-          "id": "674a789a-cc51-4db7-b91e-709cfca40ce9",
-          "role": "user",
-          "content": "测试日志记录",
-          "created_at": "22:20",
-          "attachments": []
-        },
-        {
-          "id": "bfc332e0-6bcd-45fb-80a3-dc1e07754597",
-          "role": "assistant",
-          "content": "日志记录功能测试成功！\n\n**测试结果摘要：**\n\n1.  **日志文件位置**：\n    *   `./logs/rag_mcp.log`：记录 RAG（检索增强生成）相关的操作。\n    *   `./logs/secretary_agent.log`：记录秘书代理（Moss）的运行状态和请求处理。\n\n2.  **日志配置**：\n    *   使用 `utils/logger.py` 进行配置。\n    *   日志级别设置为 `INFO`。\n    *   使用 `RotatingFileHandler`，单个文件最大 2MB，保留 3 个备份文件。\n    *   格式包含：时间、级别、名称、消息。\n\n3.  **最近日志内容验证**：\n    *   **RAG 日志**：记录了成功的查询（如“帮我查询明天的课程”）以及一次因缺少环境变量导致的失败。\n    *   **Agent 日志**：记录了代理的启动、关闭以及刚刚收到的“测试日志记录”聊天请求。\n\n日志系统运行正常，能够准确记录关键事件和错误信息。",
-          "created_at": "22:20",
-          "attachments": []
-        }
-      ]
-    },
-    {
       "thread_id": "system-refresh-study",
       "title": "study 静默刷新",
       "preview": "✅ **任务完成！**\n\n已成功更新前端界面中的 **s",

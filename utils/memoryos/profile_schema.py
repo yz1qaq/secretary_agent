@@ -52,6 +52,7 @@ def blank_profile(kind: ProfileKind) -> dict[str, str]:
 
 
 def normalize_profile(kind: ProfileKind, raw_profile: Any) -> dict[str, str]:
+    """把外部输入的画像对象裁剪成白名单字段，避免脏数据直接进长期记忆。"""
     normalized = blank_profile(kind)
     if not isinstance(raw_profile, dict):
         return normalized
@@ -71,6 +72,7 @@ def merge_profiles(
     manual_profile: dict[str, str],
     inferred_profile: dict[str, str],
 ) -> dict[str, str]:
+    """合并手动画像和自动画像时始终让手动字段优先，自动字段只负责补空。"""
     manual = normalize_profile(kind, manual_profile)
     inferred = normalize_profile(kind, inferred_profile)
     merged = blank_profile(kind)
@@ -81,6 +83,7 @@ def merge_profiles(
 
 
 def render_profile_text(kind: ProfileKind, profile: dict[str, str]) -> str:
+    """把结构化画像重新转成稳定文本，供 prompt 注入和设置页预览共用。"""
     normalized = normalize_profile(kind, profile)
     labels = get_profile_fields(kind)
     lines = [
@@ -96,6 +99,7 @@ def render_profile_text(kind: ProfileKind, profile: dict[str, str]) -> str:
 
 
 def legacy_profile_to_inferred(kind: ProfileKind, profile_text: str) -> dict[str, str]:
+    """兼容旧版只有纯文本 profile 的数据文件，迁移时至少保住原始信息不丢。"""
     normalized = blank_profile(kind)
     clean = str(profile_text or "").strip()
     if not clean:
@@ -119,6 +123,7 @@ def _collect_lines_by_keywords(lines: list[str], keywords: tuple[str, ...], limi
 
 
 def infer_user_profile_from_knowledge(knowledge_items: list[dict[str, Any]]) -> dict[str, str]:
+    """基于长期 knowledge 做轻量规则归纳，生成可编辑的用户推断画像。"""
     profile = blank_profile("user")
     lines = [
         str(item.get("knowledge") or "").strip()
@@ -174,6 +179,7 @@ def infer_user_profile_from_knowledge(knowledge_items: list[dict[str, Any]]) -> 
 
 
 def infer_assistant_profile_from_knowledge(knowledge_items: list[dict[str, Any]]) -> dict[str, str]:
+    """助手画像默认要有一份稳定底稿，再让长期知识逐步补充其表达与边界。"""
     profile = normalize_profile("assistant", DEFAULT_ASSISTANT_INFERRED_PROFILE)
     lines = [
         str(item.get("knowledge") or "").strip()
@@ -190,4 +196,3 @@ def infer_assistant_profile_from_knowledge(knowledge_items: list[dict[str, Any]]
             profile["response_style"] = excerpt(response_style, 200)
 
     return profile
-

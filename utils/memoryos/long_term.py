@@ -46,6 +46,7 @@ class LongTermMemory:
         return render_profile_text(self.profile_kind, merged_profile)
 
     def _normalize_payload(self, raw_payload: dict[str, Any]) -> dict[str, Any]:
+        """把长期记忆文件统一迁移成新结构：手动画像、自动画像、合并摘要和 knowledge 并存。"""
         payload = dict(raw_payload)
         knowledge = payload.get("knowledge")
         if not isinstance(knowledge, list):
@@ -84,6 +85,7 @@ class LongTermMemory:
         }
 
     def _read(self) -> dict[str, Any]:
+        """读取时顺手做结构修复，这样旧数据会在第一次访问时自动升级。"""
         raw_payload = load_json_file(self.file_path, self._default_payload())
         payload = self._normalize_payload(raw_payload)
 
@@ -116,6 +118,7 @@ class LongTermMemory:
         )
 
     def get_snapshot(self) -> dict[str, Any]:
+        """给设置页和接口层返回长期记忆快照时，统一走这一份结构化视图。"""
         payload = self._read()
         return {
             "manual_profile": deepcopy(payload["manual_profile"]),
@@ -125,6 +128,7 @@ class LongTermMemory:
         }
 
     def refresh_merged_profile_text(self) -> str:
+        """当手动画像或自动画像变化后，重新生成最终真正注入模型的摘要文本。"""
         payload = self._read()
         payload["merged_profile_text"] = self._build_merged_profile_text(
             payload["manual_profile"],
@@ -134,6 +138,7 @@ class LongTermMemory:
         return str(payload["merged_profile_text"]).strip()
 
     def update_manual_profile(self, profile_patch: dict[str, Any]) -> dict[str, str]:
+        """只覆盖前端实际提交的字段，避免一次局部修改把其他字段误清空。"""
         payload = self._read()
         current = payload["manual_profile"]
         normalized_patch = normalize_profile(self.profile_kind, profile_patch)
@@ -149,6 +154,7 @@ class LongTermMemory:
         return deepcopy(payload["manual_profile"])
 
     def update_inferred_profile(self, profile_data: dict[str, Any]) -> dict[str, str]:
+        """自动画像完全由 MemoryOS 维护，更新时直接替换当前推断结果。"""
         payload = self._read()
         payload["inferred_profile"] = normalize_profile(self.profile_kind, profile_data)
         payload["merged_profile_text"] = self._build_merged_profile_text(
@@ -198,6 +204,7 @@ class LongTermMemory:
         max_items: int = 8,
         title: str = "已知用户信息",
     ) -> str:
+        """基于 knowledge 重新生成自动画像，是长期记忆“会自己长出画像”的核心入口。"""
         knowledge = self.get_knowledge()[-max_items:]
         if self.profile_kind == "assistant":
             inferred_profile = infer_assistant_profile_from_knowledge(knowledge)

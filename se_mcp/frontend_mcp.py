@@ -32,6 +32,7 @@ def _write_text(path: Path, content: str) -> None:
 
 
 def _ensure_allowed_exports(region: dict, source: str) -> None:
+    """局部改前端时强制保留关键导出，避免 agent 一次修改把区域接口改丢。"""
     for export_name in region["allowed_exports"]:
         export_pattern = re.compile(
             rf"export\s+(const|function)\s+{re.escape(export_name)}\b"
@@ -43,6 +44,7 @@ def _ensure_allowed_exports(region: dict, source: str) -> None:
 
 
 def _run_frontend_build() -> tuple[bool, str]:
+    """所有源码修改最终都以真实构建结果为准，而不是只看语法替换是否成功。"""
     result = subprocess.run(
         ["npm", "run", "build"],
         cwd=FRONTEND_ROOT,
@@ -107,6 +109,7 @@ def update_frontend_region(
     new_source: Annotated[str, Field(description="新的完整区域源码")],
     validate: Annotated[bool, Field(description="是否执行构建校验")] = True,
 ) -> dict:
+    """前端白名单区域更新入口：先替换文件，再构建校验，失败时自动回滚。"""
     region = get_frontend_region(region_id)
     file_path = region["file_path"]
     original_source = _read_text(file_path)
