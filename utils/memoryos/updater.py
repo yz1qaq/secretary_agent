@@ -111,4 +111,7 @@ class Updater:
         self.long_term_memory.rebuild_profile_from_knowledge(
             title="当前已知的用户偏好与事实"
         )
+        self.assistant_long_term_memory.rebuild_profile_from_knowledge(
+            title="当前已知的 AI 秘书工作方式与表达偏好"
+        )
         self.mid_term_memory.mark_analyzed([segment_id])

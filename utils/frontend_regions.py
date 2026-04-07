@@ -67,6 +67,21 @@ FRONTEND_REGION_REGISTRY = [
             "LifePanel",
         ],
     },
+    {
+        "region_id": "settings-panel",
+        "label": "设置区域",
+        "file_path": PROJECT_ROOT
+        / "frontend"
+        / "src"
+        / "dashboard"
+        / "regions"
+        / "SettingsPanel.tsx",
+        "description": "控制设置页。该区域展示模型配置、短期记忆、中期记忆，以及长期记忆中的用户画像和 Agent 画像表单。",
+        "allowed_exports": [
+            "settingsWorkspaceCopy",
+            "SettingsPanel",
+        ],
+    },
 ]
 
 

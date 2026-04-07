@@ -6,6 +6,7 @@ export const sidebarNavItems: NavItemData[] = [
   { key: 'dashboard', label: '今日计划', caption: '只看今天要做的事' },
   { key: 'today', label: '学习', caption: '课程、自习与长期研究' },
   { key: 'tasks', label: '生活', caption: '习惯、恢复与日常节奏' },
+  { key: 'settings', label: '设置', caption: '模型接入与 MemoryOS 记忆中心' },
 ]
 
 export function SidebarNav({

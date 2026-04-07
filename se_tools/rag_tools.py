@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import sys
 
@@ -18,6 +19,9 @@ async def get_stdio_rag_tools():
         "command": sys.executable,
         "args": [str(RAG_MCP_PATH)],
         "cwd": str(PROJECT_ROOT),
+        "env": {
+            **os.environ,
+        },
     }
 
     client,tools = await create_mcp_stdio_client("rag_tools",params)

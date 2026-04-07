@@ -43,11 +43,13 @@ class MemoryOSService:
             user_dir / "long_term_user.json",
             knowledge_capacity=long_term_knowledge_capacity,
             profile_key="user_profile",
+            profile_kind="user",
         )
         self.assistant_long_term_memory = LongTermMemory(
             assistant_dir / "long_term_assistant.json",
             knowledge_capacity=long_term_knowledge_capacity,
             profile_key="assistant_profile",
+            profile_kind="assistant",
         )
 
         self.retriever = Retriever(
@@ -121,9 +123,53 @@ class MemoryOSService:
             return {
                 "user_id": self.user_id,
                 "assistant_id": self.assistant_id,
-                "user_profile": self.user_long_term_memory.get_profile(),
+                "user_profile": self.user_long_term_memory.get_snapshot(),
+                "assistant_profile": self.assistant_long_term_memory.get_snapshot(),
                 "user_knowledge": self.user_long_term_memory.get_knowledge(),
                 "assistant_knowledge": self.assistant_long_term_memory.get_knowledge(),
+            }
+
+    async def get_short_term_memory(self) -> list[dict[str, Any]]:
+        async with self._lock:
+            return self.short_term_memory.get_all()
+
+    async def get_mid_term_memory(self) -> list[dict[str, Any]]:
+        async with self._lock:
+            return self.mid_term_memory.get_all()
+
+    async def get_long_term_memory(self) -> dict[str, Any]:
+        async with self._lock:
+            return {
+                "user": self.user_long_term_memory.get_snapshot(),
+                "assistant": self.assistant_long_term_memory.get_snapshot(),
+            }
+
+    async def update_manual_profiles(
+        self,
+        *,
+        user_manual_profile: dict[str, Any] | None = None,
+        assistant_manual_profile: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        async with self._lock:
+            if user_manual_profile is not None:
+                self.user_long_term_memory.update_manual_profile(user_manual_profile)
+            if assistant_manual_profile is not None:
+                self.assistant_long_term_memory.update_manual_profile(assistant_manual_profile)
+
+            return {
+                "user": self.user_long_term_memory.get_snapshot(),
+                "assistant": self.assistant_long_term_memory.get_snapshot(),
+            }
+
+    async def get_memory_center_snapshot(self) -> dict[str, Any]:
+        async with self._lock:
+            return {
+                "short_term": self.short_term_memory.get_all(),
+                "mid_term": self.mid_term_memory.get_all(),
+                "long_term": {
+                    "user": self.user_long_term_memory.get_snapshot(),
+                    "assistant": self.assistant_long_term_memory.get_snapshot(),
+                },
             }
 
     async def build_prompt_context(
@@ -135,9 +181,13 @@ class MemoryOSService:
         retrieved = await self.retrieve_memory(query=query, thread_id=thread_id)
 
         parts: list[str] = []
-        profile = self.user_long_term_memory.get_profile()
-        if profile:
-            parts.append(f"用户画像摘要：\n{profile}")
+        user_profile = self.user_long_term_memory.get_profile()
+        if user_profile:
+            parts.append(f"用户画像摘要：\n{user_profile}")
+
+        assistant_profile = self.assistant_long_term_memory.get_profile()
+        if assistant_profile:
+            parts.append(f"AI秘书画像摘要：\n{assistant_profile}")
 
         user_knowledge = retrieved.get("retrieved_user_knowledge") or []
         if isinstance(user_knowledge, list) and user_knowledge:

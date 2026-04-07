@@ -5,3 +5,37 @@ O
 2026-03-29 22:20:26,351 [ERROR] rag_mcp - retrieve_rag failed: missing required environment variables
 2026-03-29 22:25:22,561 [ERROR] rag_mcp - retrieve_rag failed: missing required environment variables
 2026-03-29 22:51:44,215 [ERROR] rag_mcp - retrieve_rag failed: missing required environment variables
+2026-04-01 00:15:04,652 [ERROR] rag_mcp - retrieve_rag failed: missing required environment variables
+2026-04-01 00:17:28,451 [ERROR] rag_mcp - retrieve_rag failed: missing required environment variables
+2026-04-01 00:18:41,705 [INFO] rag_mcp - retrieve_rag request: query=请总结 RAG 说明书的职责
+2026-04-01 00:18:42,475 [INFO] rag_mcp - retrieve_rag success: query=请总结 RAG 说明书的职责 result=AI 秘书 RAG 总说明书文档用途本文档是给 AI 秘书 agent 使用的总操作手册，用于指导 agent 在不同任务下判断：是否需要先调用 `retrieve_rag` 查询说明书查询说明书后应该调用哪些 MCP 工具执行哪些任务不能只依赖 RAG，必须使用真实工具获取结果本文档不是面向最终用户的介绍文案，而是 
+2026-04-01 00:19:10,571 [INFO] rag_mcp - retrieve_rag request: query=如何操作终端工具
+2026-04-01 00:19:11,097 [INFO] rag_mcp - retrieve_rag success: query=如何操作终端工具 result=适用问题：“我想做某件事，你先告诉我怎么做”“这个项目里某类任务的处理流程是什么”“你应该如何帮我完成某项导入或更新”处理规则：先调用 `retrieve_rag`读到规则后，再判断是否需要调用其他工具不要跳过规则说明直接执行
+禁止行为与边界
+以下行为禁止：
+1. 不要把 RAG 当实时事实来源
+RAG 只能告诉 ag
+2026-04-01 00:19:11,098 [INFO] rag_mcp - retrieve_rag request: query=长任务与交互式终端任务
+2026-04-01 00:19:11,522 [INFO] rag_mcp - retrieve_rag success: query=长任务与交互式终端任务 result=`get_current_datetime`用途：获取当前日期、时间、星期和时区默认时区：`Asia/Shanghai`适合场景：现在几点今天几号今天星期几明天是周几本周判断
+按任务场景的处理说明
+场景 1：时间与日期类问题适用问题：现在几点今天几号今天星期几明天是周几本周安排处理规则：直接优先使用 `get_curr
+2026-04-01 00:19:11,523 [INFO] rag_mcp - retrieve_rag request: query=run_script_in_exist_terminal
+2026-04-01 00:19:11,932 [INFO] rag_mcp - retrieve_rag success: query=run_script_in_exist_terminal result=`run_cli`用途：运行一次性命令行命令适合数据库查询、表结构查看、文件查询、轻量脚本特点：适合快速得到一次性结果不适合需要长期保持上下文的任务限制：禁止 `rm`适合场景：`SHOW TABLES;``DESCRIBE course_schedule;``SELECT ...``ls``cat``rg`一次性脚本
+2026-04-01 00:19:11,933 [INFO] rag_mcp - retrieve_rag request: query=课程表导入应该怎么做
+2026-04-01 00:19:12,336 [INFO] rag_mcp - retrieve_rag success: query=课程表导入应该怎么做 result=适用任务：修改 `study-panel`修改 `life-panel`修改 `today-plan-panel`修改 `sidebar-nav`推荐顺序：如需流程说明，先 `retrieve_rag``read_frontend_region``update_frontend_region``validate_fro
+2026-04-01 00:19:12,336 [INFO] rag_mcp - retrieve_rag request: query=前端白名单区域有哪些
+2026-04-01 00:19:12,832 [INFO] rag_mcp - retrieve_rag success: query=前端白名单区域有哪些 result=`run_cli`用途：运行一次性命令行命令适合数据库查询、表结构查看、文件查询、轻量脚本特点：适合快速得到一次性结果不适合需要长期保持上下文的任务限制：禁止 `rm`适合场景：`SHOW TABLES;``DESCRIBE course_schedule;``SELECT ...``ls``cat``rg`一次性脚本
+2026-04-01 00:19:12,832 [INFO] rag_mcp - retrieve_rag request: query=RAG 的职责是什么
+2026-04-01 00:19:13,186 [INFO] rag_mcp - retrieve_rag success: query=RAG 的职责是什么 result=AI 秘书 RAG 总说明书文档用途本文档是给 AI 秘书 agent 使用的总操作手册，用于指导 agent 在不同任务下判断：是否需要先调用 `retrieve_rag` 查询说明书查询说明书后应该调用哪些 MCP 工具执行哪些任务不能只依赖 RAG，必须使用真实工具获取结果本文档不是面向最终用户的介绍文案，而是 
+2026-04-01 00:19:25,441 [ERROR] rag_mcp - retrieve_rag failed: missing required environment variables
+2026-04-01 00:19:34,103 [ERROR] rag_mcp - retrieve_rag failed: missing required environment variables
+2026-04-01 00:19:44,063 [INFO] rag_mcp - retrieve_rag request: query=RAG 的职责是什么
+2026-04-01 00:19:44,613 [INFO] rag_mcp - retrieve_rag success: query=RAG 的职责是什么 result=AI 秘书 RAG 总说明书文档用途本文档是给 AI 秘书 agent 使用的总操作手册，用于指导 agent 在不同任务下判断：是否需要先调用 `retrieve_rag` 查询说明书查询说明书后应该调用哪些 MCP 工具执行哪些任务不能只依赖 RAG，必须使用真实工具获取结果本文档不是面向最终用户的介绍文案，而是 
+2026-04-01 00:20:37,755 [INFO] rag_mcp - retrieve_rag request: query=RAG 的职责是什么
+2026-04-01 00:20:38,310 [INFO] rag_mcp - retrieve_rag success: query=RAG 的职责是什么 result=AI 秘书 RAG 总说明书文档用途本文档是给 AI 秘书 agent 使用的总操作手册，用于指导 agent 在不同任务下判断：是否需要先调用 `retrieve_rag` 查询说明书查询说明书后应该调用哪些 MCP 工具执行哪些任务不能只依赖 RAG，必须使用真实工具获取结果本文档不是面向最终用户的介绍文案，而是 
+2026-04-01 00:21:27,027 [INFO] rag_mcp - retrieve_rag request: query=如何操作终端工具
+2026-04-01 00:21:27,599 [INFO] rag_mcp - retrieve_rag success: query=如何操作终端工具 result=适用问题：“我想做某件事，你先告诉我怎么做”“这个项目里某类任务的处理流程是什么”“你应该如何帮我完成某项导入或更新”处理规则：先调用 `retrieve_rag`读到规则后，再判断是否需要调用其他工具不要跳过规则说明直接执行
+禁止行为与边界
+以下行为禁止：
+1. 不要把 RAG 当实时事实来源
+RAG 只能告诉 ag

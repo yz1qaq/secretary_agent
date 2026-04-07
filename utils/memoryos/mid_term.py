@@ -33,6 +33,9 @@ class MidTermMemory:
         self._write(payload)
         return deepcopy(segment)
 
+    def get_all(self) -> list[dict[str, Any]]:
+        return deepcopy(self._read()["segments"])
+
     def retrieve(self, query: str, limit: int = 4) -> list[dict[str, Any]]:
         payload = self._read()
         scored: list[tuple[float, dict[str, Any]]] = []

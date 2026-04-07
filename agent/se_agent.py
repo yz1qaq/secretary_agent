@@ -1,6 +1,5 @@
 import asyncio
 import json
-import os
 import sys
 import traceback
 from contextlib import asynccontextmanager
@@ -28,13 +27,11 @@ from se_model.llm_config import creat_config
 from se_prompts.system_prompts import creat_system_prompt
 from utils.logger import get_project_logger
 from utils.memoryos import MemoryOSService
+from utils.model_config_store import ModelConfigStore
 from utils.time_utils import DEFAULT_TIMEZONE, build_time_context_text
 from utils.thread_store import DEFAULT_THREAD_PREVIEW, DEFAULT_THREAD_TITLE, thread_store
 
 
-API_KEY = os.getenv("DASHSCOPE_API_KEY")
-BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-MODEL_NAME = "qwen3.5-plus"
 DEFAULT_THREAD_ID = 1
 HOST =  "127.0.0.1"
 PORT = 9826
@@ -108,6 +105,17 @@ class PanelRefreshResponse(BaseModel):
     panel: str
     message: str
     thread_id: str
+
+
+class ModelSettingsUpdateRequest(BaseModel):
+    base_url: str = Field(..., description="模型服务的 base_url")
+    api_key: str = Field(default="", description="模型服务的 api_key，留空时保持当前值")
+    model_name: str = Field(..., description="模型名称")
+
+
+class LongTermProfileUpdateRequest(BaseModel):
+    user_manual_profile: dict[str, str] = Field(default_factory=dict)
+    assistant_manual_profile: dict[str, str] = Field(default_factory=dict)
 
 
 def creat_se_agent(llm, tools, debug: bool, system_prompt: str, checkpointer=None):
@@ -242,6 +250,39 @@ class SecretaryAgentService:
         self.memory_backend_name = MEMORY_BACKEND_NAME
         self.checkpointer_name = MEMORY_BACKEND_NAME
         self._startup_lock = asyncio.Lock()
+        self._model_update_lock = asyncio.Lock()
+        self.model_config_store = ModelConfigStore(ROOT_DIR / "data" / "model_config.json")
+        self.current_model_config = None
+
+    def _build_llm(self, *, base_url: str, api_key: str, model_name: str):
+        config = creat_config(
+            api_key=api_key.strip(),
+            base_url=base_url.strip(),
+            model_name=model_name.strip(),
+        )
+        config.validate()
+        llm = creat_llm(config)
+        return llm, config
+
+    def _build_base_agent(self):
+        if self.llm is None:
+            raise RuntimeError("llm 未初始化")
+        system_prompt = creat_system_prompt(agent_name=self.agent_name)
+        return creat_se_agent(
+            llm=self.llm,
+            tools=self.tools,
+            debug=False,
+            system_prompt=system_prompt,
+        )
+
+    def get_model_settings_payload(self) -> dict[str, object]:
+        config = self.current_model_config or self.model_config_store.load_or_initialize()
+        return {
+            "base_url": config.base_url,
+            "api_key_masked": self.model_config_store.mask_api_key(config.api_key),
+            "api_key_configured": bool(config.api_key.strip()),
+            "model_name": config.model_name,
+        }
 
     async def startup(self) -> None:
         async with self._startup_lock:
@@ -256,15 +297,12 @@ class SecretaryAgentService:
                 rag_tools = await get_stdio_rag_tools()
             except FileNotFoundError:
                 rag_tools = []
-            system_prompt = creat_system_prompt(agent_name=self.agent_name)
-            config = creat_config(
-                api_key=API_KEY,
-                base_url=BASE_URL,
-                model_name=MODEL_NAME,
+            llm, config = self._build_llm(
+                **self.model_config_store.load_or_initialize().to_dict(),
             )
-            llm = creat_llm(config)
 
             self.llm = llm
+            self.current_model_config = config
             self.tools = cli_tools + terminal_tools + rag_tools + frontend_tools + time_tools
             self.memory_service = MemoryOSService(
                 user_id=DEFAULT_MEMORY_USER_ID,
@@ -272,15 +310,12 @@ class SecretaryAgentService:
                 data_storage_path=ROOT_DIR / "data" / "memoryos",
             )
 
-            self.agent = creat_se_agent(
-                llm=self.llm,
-                tools=self.tools,
-                debug=False,
-                system_prompt=system_prompt,
-            )
+            self.agent = self._build_base_agent()
             logger.info(
-                "agent startup complete: memory_backend=%s cli=%d terminal=%d rag=%d frontend=%d time=%d",
+                "agent startup complete: memory_backend=%s model=%s base_url=%s cli=%d terminal=%d rag=%d frontend=%d time=%d",
                 self.memory_backend_name,
+                config.model_name,
+                config.base_url,
                 len(cli_tools),
                 len(terminal_tools),
                 len(rag_tools),
@@ -293,8 +328,80 @@ class SecretaryAgentService:
         self.llm = None
         self.tools = []
         self.memory_service = None
+        self.current_model_config = None
         self.checkpointer_name = MEMORY_BACKEND_NAME
         logger.info("agent shutdown complete")
+
+    async def update_model_config(
+        self,
+        *,
+        base_url: str,
+        api_key: str,
+        model_name: str,
+    ) -> dict[str, object]:
+        await self.startup()
+
+        current_config = self.current_model_config or self.model_config_store.load_or_initialize()
+        next_api_key = api_key.strip() or current_config.api_key
+
+        async with self._model_update_lock:
+            llm, config = self._build_llm(
+                base_url=base_url,
+                api_key=next_api_key,
+                model_name=model_name,
+            )
+            self.model_config_store.save(config)
+            self.llm = llm
+            self.current_model_config = config
+            self.agent = self._build_base_agent()
+
+        logger.info(
+            "model config hot updated: model=%s base_url=%s api_key_configured=%s",
+            config.model_name,
+            config.base_url,
+            bool(config.api_key.strip()),
+        )
+
+        return {
+            "status": "success",
+            "reload_applied": True,
+            **self.get_model_settings_payload(),
+        }
+
+    async def get_settings_snapshot(self) -> dict[str, object]:
+        await self.startup()
+        if self.memory_service is None:
+            raise RuntimeError("memory service 未初始化")
+
+        memory_snapshot = await self.memory_service.get_memory_center_snapshot()
+        return {
+            "model": self.get_model_settings_payload(),
+            "memory": {
+                "short_term": memory_snapshot["short_term"],
+                "mid_term": memory_snapshot["mid_term"],
+                "long_term": memory_snapshot["long_term"],
+            },
+        }
+
+    async def update_long_term_profiles(
+        self,
+        *,
+        user_manual_profile: dict[str, str],
+        assistant_manual_profile: dict[str, str],
+    ) -> dict[str, object]:
+        await self.startup()
+        if self.memory_service is None:
+            raise RuntimeError("memory service 未初始化")
+
+        snapshot = await self.memory_service.update_manual_profiles(
+            user_manual_profile=user_manual_profile,
+            assistant_manual_profile=assistant_manual_profile,
+        )
+        logger.info("long term profiles updated")
+        return {
+            "status": "success",
+            "long_term": snapshot,
+        }
 
     def create_runtime_agent(self, time_context: str, memory_context: str):
         if self.llm is None:
@@ -530,7 +637,43 @@ async def health_check():
         "message": "秘书服务正常运行",
         "checkpointer": agent_service.checkpointer_name,
         "memory_backend": agent_service.memory_backend_name,
+        "model": agent_service.get_model_settings_payload(),
     }
+
+
+@app.get("/api/settings")
+async def get_settings():
+    try:
+        return await agent_service.get_settings_snapshot()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.put("/api/settings/model")
+async def update_model_settings(payload: ModelSettingsUpdateRequest):
+    try:
+        return await agent_service.update_model_config(
+            base_url=payload.base_url,
+            api_key=payload.api_key,
+            model_name=payload.model_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.put("/api/settings/long-term-profile")
+async def update_long_term_profile(payload: LongTermProfileUpdateRequest):
+    try:
+        return await agent_service.update_long_term_profiles(
+            user_manual_profile=payload.user_manual_profile,
+            assistant_manual_profile=payload.assistant_manual_profile,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.get("/api/chat/threads")

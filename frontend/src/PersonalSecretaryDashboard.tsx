@@ -11,6 +11,10 @@ import {
 
 import { LifePanel, lifeWorkspaceCopy } from './dashboard/regions/LifePanel'
 import {
+  SettingsPanel,
+  settingsWorkspaceCopy,
+} from './dashboard/regions/SettingsPanel'
+import {
   SidebarNav,
   sidebarNavItems,
 } from './dashboard/regions/SidebarNav'
@@ -19,7 +23,14 @@ import {
   TodayPlanPanel,
   todayPlanWorkspaceCopy,
 } from './dashboard/regions/TodayPlanPanel'
-import { NavigationKey, RefreshPanelKey, WorkspaceCopy } from './dashboard/types'
+import {
+  AssistantProfileFormData,
+  NavigationKey,
+  RefreshPanelKey,
+  SettingsData,
+  UserProfileFormData,
+  WorkspaceCopy,
+} from './dashboard/types'
 
 type MessageRole = 'assistant' | 'user'
 
@@ -147,6 +158,20 @@ interface PanelRefreshResponse {
   thread_id?: string
 }
 
+interface ModelUpdateResponse {
+  status?: string
+  reload_applied?: boolean
+  base_url?: string
+  api_key_masked?: string
+  api_key_configured?: boolean
+  model_name?: string
+}
+
+interface LongTermUpdateResponse {
+  status?: string
+  long_term?: SettingsData['memory']['long_term']
+}
+
 const defaultAssistantMessages: ChatMessage[] = [
   {
     id: 'assistant-welcome',
@@ -209,6 +234,35 @@ function createDraftThread(): ChatThread {
     preview: '当前为草稿会话，发送首条消息后会自动保存。',
     isDraft: true,
     messages: defaultAssistantMessages,
+  }
+}
+
+function createEmptyUserProfile(): UserProfileFormData {
+  return {
+    name: '',
+    alias: '',
+    role: '',
+    school: '',
+    major: '',
+    grade_or_stage: '',
+    advisor: '',
+    goals: '',
+    preferences: '',
+    constraints: '',
+    notes: '',
+  }
+}
+
+function createEmptyAssistantProfile(): AssistantProfileFormData {
+  return {
+    name: '',
+    role: '',
+    tone: '',
+    core_responsibilities: '',
+    response_style: '',
+    tool_usage_style: '',
+    boundaries: '',
+    notes: '',
   }
 }
 
@@ -577,6 +631,10 @@ function MessageBubble({
 }
 
 function getWorkspaceCopy(activeNav: NavigationKey): WorkspaceCopy {
+  if (activeNav === 'settings') {
+    return settingsWorkspaceCopy
+  }
+
   if (activeNav === 'today') {
     return studyWorkspaceCopy
   }
@@ -607,6 +665,25 @@ export default function PersonalSecretaryDashboard() {
     study: { refreshing: false, message: '', error: '' },
     life: { refreshing: false, message: '', error: '' },
   })
+  const [settingsData, setSettingsData] = useState<SettingsData | null>(null)
+  const [settingsLoading, setSettingsLoading] = useState(false)
+  const [settingsError, setSettingsError] = useState('')
+  const [modelForm, setModelForm] = useState({
+    baseUrl: '',
+    apiKey: '',
+    modelName: '',
+  })
+  const [modelSaving, setModelSaving] = useState(false)
+  const [modelSuccess, setModelSuccess] = useState('')
+  const [longTermForm, setLongTermForm] = useState<{
+    user: UserProfileFormData
+    assistant: AssistantProfileFormData
+  }>({
+    user: createEmptyUserProfile(),
+    assistant: createEmptyAssistantProfile(),
+  })
+  const [longTermSaving, setLongTermSaving] = useState(false)
+  const [longTermSuccess, setLongTermSuccess] = useState('')
   const messageBottomRef = useRef<HTMLDivElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const pendingAttachmentsRef = useRef<PendingAttachment[]>(pendingAttachments)
@@ -633,6 +710,46 @@ export default function PersonalSecretaryDashboard() {
   useEffect(() => {
     threadsRef.current = threads
   }, [threads])
+
+  const syncSettingsForms = useCallback((payload: SettingsData) => {
+    setModelForm({
+      baseUrl: payload.model.base_url || '',
+      apiKey: '',
+      modelName: payload.model.model_name || '',
+    })
+    setLongTermForm({
+      user: payload.memory.long_term.user.manual_profile || createEmptyUserProfile(),
+      assistant:
+        payload.memory.long_term.assistant.manual_profile ||
+        createEmptyAssistantProfile(),
+    })
+  }, [])
+
+  const loadSettings = useCallback(
+    async (force = false): Promise<void> => {
+      if (!force && settingsLoading) {
+        return
+      }
+
+      setSettingsLoading(true)
+      setSettingsError('')
+
+      try {
+        const payload = await requestJson<SettingsData>(buildApiUrl('/api/settings'))
+        setSettingsData(payload)
+        syncSettingsForms(payload)
+      } catch (error) {
+        setSettingsError(
+          error instanceof Error
+            ? error.message
+            : '读取设置失败，请检查 /api/settings。',
+        )
+      } finally {
+        setSettingsLoading(false)
+      }
+    },
+    [settingsLoading, syncSettingsForms],
+  )
 
   const loadThreadHistory = useCallback(async (threadId: string): Promise<void> => {
     if (!USE_MODERN_CHAT_API) {
@@ -734,6 +851,12 @@ export default function PersonalSecretaryDashboard() {
       alive = false
     }
   }, [loadThreadHistory])
+
+  useEffect(() => {
+    if (activeNav === 'settings' && !settingsData && !settingsLoading) {
+      void loadSettings()
+    }
+  }, [activeNav, loadSettings, settingsData, settingsLoading])
 
   useLayoutEffect(() => {
     const animationFrame = window.requestAnimationFrame(() => {
@@ -1063,6 +1186,100 @@ export default function PersonalSecretaryDashboard() {
     }
   }
 
+  function handleModelFieldChange(
+    field: 'baseUrl' | 'apiKey' | 'modelName',
+    value: string,
+  ) {
+    setModelForm((current) => ({
+      ...current,
+      [field]: value,
+    }))
+    setModelSuccess('')
+    setSettingsError('')
+  }
+
+  function handleLongTermFieldChange(
+    kind: 'user' | 'assistant',
+    field: string,
+    value: string,
+  ) {
+    setLongTermForm((current) => ({
+      ...current,
+      [kind]: {
+        ...current[kind],
+        [field]: value,
+      },
+    }))
+    setLongTermSuccess('')
+    setSettingsError('')
+  }
+
+  async function handleSaveModel() {
+    setModelSaving(true)
+    setSettingsError('')
+    setModelSuccess('')
+
+    try {
+      await requestJson<ModelUpdateResponse>(buildApiUrl('/api/settings/model'), {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          base_url: modelForm.baseUrl,
+          api_key: modelForm.apiKey,
+          model_name: modelForm.modelName,
+        }),
+      })
+      await loadSettings(true)
+      setModelForm((current) => ({
+        ...current,
+        apiKey: '',
+      }))
+      setModelSuccess('模型配置已热更新，新的请求会自动使用最新配置。')
+    } catch (error) {
+      setSettingsError(
+        error instanceof Error
+          ? error.message
+          : '保存模型配置失败，请检查 /api/settings/model。',
+      )
+    } finally {
+      setModelSaving(false)
+    }
+  }
+
+  async function handleSaveLongTerm() {
+    setLongTermSaving(true)
+    setSettingsError('')
+    setLongTermSuccess('')
+
+    try {
+      await requestJson<LongTermUpdateResponse>(
+        buildApiUrl('/api/settings/long-term-profile'),
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            user_manual_profile: longTermForm.user,
+            assistant_manual_profile: longTermForm.assistant,
+          }),
+        },
+      )
+      await loadSettings(true)
+      setLongTermSuccess('长期记忆中的手动画像已更新，后续对话会优先使用新的画像字段。')
+    } catch (error) {
+      setSettingsError(
+        error instanceof Error
+          ? error.message
+          : '保存长期画像失败，请检查 /api/settings/long-term-profile。',
+      )
+    } finally {
+      setLongTermSaving(false)
+    }
+  }
+
   function renderMainContent(): ReactNode {
     if (activeNav === 'dashboard') {
       return <TodayPlanPanel />
@@ -1086,6 +1303,26 @@ export default function PersonalSecretaryDashboard() {
           refreshing={panelRefreshState.life.refreshing}
           refreshMessage={panelRefreshState.life.message}
           refreshError={panelRefreshState.life.error}
+        />
+      )
+    }
+
+    if (activeNav === 'settings') {
+      return (
+        <SettingsPanel
+          settings={settingsData}
+          loading={settingsLoading}
+          error={settingsError}
+          modelForm={modelForm}
+          modelSaving={modelSaving}
+          modelSuccess={modelSuccess}
+          onModelFieldChange={handleModelFieldChange}
+          onSaveModel={handleSaveModel}
+          longTermForm={longTermForm}
+          longTermSaving={longTermSaving}
+          longTermSuccess={longTermSuccess}
+          onLongTermFieldChange={handleLongTermFieldChange}
+          onSaveLongTerm={handleSaveLongTerm}
         />
       )
     }
