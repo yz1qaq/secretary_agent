@@ -39,3 +39,5 @@ RAG 只能告诉 ag
 以下行为禁止：
 1. 不要把 RAG 当实时事实来源
 RAG 只能告诉 ag
+2026-04-07 10:48:18,414 [INFO] rag_mcp - retrieve_rag request: query=如何更新今日学习计划
+2026-04-07 10:48:20,616 [INFO] rag_mcp - retrieve_rag success: query=如何更新今日学习计划 result=适用问题：修改学习区界面修改生活区界面修改今日计划区修改导航栏处理规则：如果用户是在问“应该怎么改前端”或“按什么流程改”，先 `retrieve_rag`明确目标 region先调用 `read_frontend_region`再调用 `update_frontend_region`最后调用 `validate_fr

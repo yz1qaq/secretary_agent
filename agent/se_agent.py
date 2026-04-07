@@ -1,6 +1,7 @@
 import asyncio
 import json
 import sys
+import time
 import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -25,6 +26,7 @@ from se_tools.time_tools import get_stdio_time_tools
 from se_model.llm import creat_llm
 from se_model.llm_config import creat_config
 from se_prompts.system_prompts import creat_system_prompt
+from utils.llm_audit_store import llm_audit_store
 from utils.logger import get_project_logger
 from utils.memoryos import MemoryOSService
 from utils.model_config_store import ModelConfigStore
@@ -435,16 +437,57 @@ class SecretaryAgentService:
             "long_term": snapshot,
         }
 
+    def build_runtime_system_prompt(self, time_context: str, memory_context: str) -> str:
+        """单独产出运行时 system prompt，便于实际调用和审计记录共用同一份内容。"""
+        return creat_system_prompt(
+            agent_name=self.agent_name,
+            current_time_context=time_context,
+            current_memory_context=memory_context,
+        )
+
+    def _schedule_audit_record(
+        self,
+        *,
+        thread_id: str,
+        request_kind: str,
+        runtime_system_prompt: str,
+        input_messages: list[dict[str, Any]],
+        reply: str,
+        duration_ms: int,
+    ) -> None:
+        """在成功得到模型回复后异步记录本次真实上下文与 token 开销，避免阻塞主响应。"""
+        if self.current_model_config is None:
+            return
+
+        async def _record() -> None:
+            try:
+                await llm_audit_store.record_interaction(
+                    timestamp=None,
+                    thread_id=thread_id,
+                    request_kind=request_kind,
+                    model_name=self.current_model_config.model_name,
+                    base_url=self.current_model_config.base_url,
+                    system_prompt=runtime_system_prompt,
+                    input_messages=input_messages,
+                    tools=self.tools,
+                    reply=reply,
+                    duration_ms=duration_ms,
+                )
+            except Exception:
+                logger.error(
+                    "failed to record llm interaction: thread_id=%s\n%s",
+                    thread_id,
+                    traceback.format_exc(),
+                )
+
+        asyncio.create_task(_record())
+
     def create_runtime_agent(self, time_context: str, memory_context: str):
         """每次请求都重新拼运行时 prompt，把当前时间和记忆上下文动态注入进去。"""
         if self.llm is None:
             raise RuntimeError("agent 运行时依赖未初始化")
 
-        runtime_system_prompt = creat_system_prompt(
-            agent_name=self.agent_name,
-            current_time_context=time_context,
-            current_memory_context=memory_context,
-        )
+        runtime_system_prompt = self.build_runtime_system_prompt(time_context, memory_context)
         return creat_se_agent(
             llm=self.llm,
             tools=self.tools,
@@ -465,6 +508,7 @@ class SecretaryAgentService:
         user_content = build_user_content(message, attachments)
         memory_record_input = build_memory_record_input(message, attachments)
         time_context = build_time_context_text(DEFAULT_TIMEZONE)
+        started_at = time.perf_counter()
 
         logger.info(
             "chat request received: thread_id=%s attachments=%d message=%s attachment_meta=%s time_context=%s",
@@ -485,6 +529,7 @@ class SecretaryAgentService:
             query=memory_record_input,
         )
         # 线程历史只保留给前端恢复；真正喂给模型的是 MemoryOS 检索结果和当前这轮输入。
+        runtime_system_prompt = self.build_runtime_system_prompt(time_context, memory_context)
         runtime_agent = self.create_runtime_agent(time_context, memory_context)
         input_messages = build_model_input_messages(
             time_context=time_context,
@@ -516,6 +561,7 @@ class SecretaryAgentService:
         if not reply:
             logger.error("chat request returned empty reply: thread_id=%s", thread_id)
             raise RuntimeError("agent 未返回有效回复")
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
 
         await thread_store.append_turn(
             thread_id=thread_id,
@@ -534,12 +580,22 @@ class SecretaryAgentService:
                 },
             )
 
+        self._schedule_audit_record(
+            thread_id=thread_id,
+            request_kind="chat",
+            runtime_system_prompt=runtime_system_prompt,
+            input_messages=input_messages,
+            reply=reply,
+            duration_ms=duration_ms,
+        )
+
         logger.info(
-            "chat request succeeded: thread_id=%s reply=%s memory_backend=%s store_in_memory=%s",
+            "chat request succeeded: thread_id=%s reply=%s memory_backend=%s store_in_memory=%s duration_ms=%s",
             thread_id,
             summarize_message(reply),
             self.memory_backend_name,
             store_in_memory,
+            duration_ms,
         )
 
         return reply
@@ -557,6 +613,7 @@ class SecretaryAgentService:
         user_content = build_user_content(message, attachments)
         memory_record_input = build_memory_record_input(message, attachments)
         time_context = build_time_context_text(DEFAULT_TIMEZONE)
+        started_at = time.perf_counter()
 
         logger.info(
             "stream request received: thread_id=%s attachments=%d message=%s attachment_meta=%s time_context=%s",
@@ -577,6 +634,7 @@ class SecretaryAgentService:
             query=memory_record_input,
         )
         # 当前 provider 不直接产出 token 级流，所以这里先完整拿到结果，再切片成前端可消费的流。
+        runtime_system_prompt = self.build_runtime_system_prompt(time_context, memory_context)
         runtime_agent = self.create_runtime_agent(time_context, memory_context)
         input_messages = build_model_input_messages(
             time_context=time_context,
@@ -615,6 +673,7 @@ class SecretaryAgentService:
         if not reply:
             logger.error("stream request returned empty reply: thread_id=%s", thread_id)
             raise RuntimeError("agent 未返回有效回复")
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
 
         stored_thread = await thread_store.append_turn(
             thread_id=thread_id,
@@ -632,12 +691,22 @@ class SecretaryAgentService:
                 },
             )
 
+        self._schedule_audit_record(
+            thread_id=thread_id,
+            request_kind="stream",
+            runtime_system_prompt=runtime_system_prompt,
+            input_messages=input_messages,
+            reply=reply,
+            duration_ms=duration_ms,
+        )
+
         logger.info(
-            "stream request succeeded: thread_id=%s reply=%s memory_backend=%s store_in_memory=%s",
+            "stream request succeeded: thread_id=%s reply=%s memory_backend=%s store_in_memory=%s duration_ms=%s",
             thread_id,
             summarize_message(reply),
             self.memory_backend_name,
             store_in_memory,
+            duration_ms,
         )
 
         for delta in split_text_for_stream(reply):
